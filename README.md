@@ -1,45 +1,87 @@
-# Chunksmith modern gui
+# Chunksmith modern gui — NeoForge 1.21.1
 
-为 [Chunksmith](https://github.com/BarryAlen777/Chunksmith_modern_gui) 前置模组提供的现代化图形面板
-（Minecraft 1.20.1 + Forge）。
+Chunksmith（`/cs` 指令族）前置模组的现代化图形面板，**从 Forge 1.20.1 移植到 NeoForge 1.21.1**。
 
-- **作者**：BarryAlen777
-- **开源地址**：https://github.com/BarryAlen777/Chunksmith_modern_gui
-- **许可证**：MIT（见 [LICENSE](LICENSE)）
+- **原作者**：BarryAlen777
+- **上游仓库**：https://github.com/BarryAlen777/Chunksmith_modern_gui
+- **许可证**：MIT（见 [LICENSE](LICENSE)，随 jar 一起分发在 `META-INF/LICENSE`）
+- **本仓库**：**非官方（unofficial）移植分支**，只换加载器与 Minecraft 版本；目标只有一个：
+  **功能一致**——不改交互、不改文案、不改指令序列、不改存档目录布局。
+  模组本体、界面设计与文案均归原作者所有。
+
+逐条 API 对照、逐文件改动清单、以及每一步的验证证据见 **[CHANGELOG.md](CHANGELOG.md)**。
+
+## 版本矩阵
+
+| 项目 | 上游 | 本仓库 | 说明 |
+|---|---|---|---|
+| Minecraft | 1.20.1 | **1.21.1** | |
+| 加载器 | Forge 47.4.0 | **NeoForge 21.1.249** | |
+| 构建插件 | ForgeGradle `[6.0,6.2)` | **ModDevGradle 2.0.141** | NFRT 直接产出官方（Mojang）映射，**不再需要 `reobfJar`** |
+| Java | 17 | **21** | MC 1.21 要求 21 |
+| 元数据文件 | `META-INF/mods.toml` | **`META-INF/neoforge.mods.toml`** | 文件名与字段名都变了，见 CHANGELOG §2 |
+| 资源包格式 | `pack_format 15` | **`pack_format 34`** | |
+| Java 包名 | `cn.blockforge.generated.chunksmithchunksmithgu` | **不变** | 保持逐行可比对，便于 diff 上游 |
+| mod id / 版本 | `chunksmith_modern_gui` / `1.0.4-r23` | **不变** | |
+| 产物名 | `chunksmith_modern_gui-1.0.4-r23.jar` | `chunksmith_modern_gui-neoforge-1.21.1-1.0.4-r23.jar` | 加后缀避免与 1.20.1 Forge 版同名 jar 冲突 |
+
+## 构建
+
+需要 **JDK 21**：
+
+```bash
+./gradlew build --no-configuration-cache --no-daemon --console=plain
+# 产物：build/libs/chunksmith_modern_gui-neoforge-1.21.1-1.0.4-r23.jar
+```
+
+其它命令：
+
+```bash
+./gradlew runClient      # 开发客户端（需要图形环境）
+./gradlew runServer      # 开发专用服务器（已加 --nogui）
+```
+
+### 地址空间受限的机器
+
+开发用的那台机器 shell `ulimit -v` 硬上限是 4 GiB（`ulimit -Hv` 也是 4194304，提不上去）。
+Gradle 守护进程、以及 NeoFormRuntime 自己 fork 出来的 JVM，默认堆是物理内存的 1/4（≈4 GB），
+再加 1 GB compressed class space，虚拟地址空间直接超限，报
+`Could not allocate compressed class space: 1073741824 bytes`。要**两头一起压**：
+
+- **Gradle 侧**已写在 `gradle.properties`：
+  `-Xmx1536m -XX:MaxMetaspaceSize=512m -XX:CompressedClassSpaceSize=192m -XX:ReservedCodeCacheSize=128m`
+- **NeoFormRuntime 侧**（它 fork 出来的 JVM 不受 `gradle.properties` 管）用环境变量：
+
+```bash
+export JAVA_HOME=/usr/lib/jvm/java-21-openjdk
+export GRADLE_USER_HOME=/home/mdr/.gradle
+export JAVA_TOOL_OPTIONS="-Xmx1536m -XX:MaxMetaspaceSize=512m \
+  -XX:CompressedClassSpaceSize=256m -XX:ReservedCodeCacheSize=128m"
+
+./gradlew build --no-configuration-cache --no-daemon --console=plain
+```
+
+另外：**不要用 `nohup ... &` 把 Gradle 构建脱离出去**——脱离后的 shell 会丢库路径，
+`sleep` / `grep` 会以 `cannot open shared object file` / `Function not implemented` 失败。
+用调用方自带的后台机制跑。
 
 ## 安装
 
-1. 确认游戏是 **Minecraft 1.20.1 + Forge 47.x**。
-2. 把 `chunksmith_modern_gui-*.jar` 放进 `.minecraft/mods` 文件夹。
-3. 同时安装 Chunksmith（https://modrinth.com/plugin/chunksmith） 前置模组（服务端也需要装）。
-4. 进游戏按 **P** 打开指令面板。
+1. Minecraft **1.21.1 + NeoForge 21.1.x**。
+2. 把 jar 放进 `.minecraft/mods`（**客户端必须装**；服务端装了才有热力图与握手信息）。
+3. 需要 Chunksmith 前置（https://modrinth.com/plugin/chunksmith），服务端也要装。
+4. 进游戏按 **P** 打开指令面板；键位可在「控制 → 按键绑定」里改。
 
-ChunkSmith GUI — 可视化操作附属模组介绍
+## 面板功能（与 1.20.1 版一致，六个标签页）
 
-模组简介
-ChunkSmith GUI 是一款专为 Chunksmith 区块预生成模组 开发的可视化附属辅助模组。原版 Chunksmith 仅支持纯指令操作，门槛较高、上手困难。本模组为其补齐了完整的图形化交互界面，让服务器服主、单机玩家无需记忆任何指令，通过可视化界面即可一站式完成所有区块预生成管理操作，大幅降低使用门槛、提升操作效率。
-模组完美兼容原版 Chunksmith 所有核心机制，保留其低IO占用、自适应限流、后台静默运行、内存稳定不崩服的全部优势，仅对操作方式进行可视化升级，不修改原版核心逻辑，兼容性、稳定性拉满。
+| 标签页 | 内容 |
+|---|---|
+| 生成 | 世界名 / 形状 / 中心模式 / 中心坐标 / 主半径+第二半径、忽略前置检测、运行粒子、命令预览（可逐行编辑）、开始生成、复制命令、重置表单 |
+| 任务 | 总进度 / 已生成区块 / 生成速度三张卡片，最近状态与异常，开始·暂停·继续·取消·确认取消·刷新进度·标记为已结束 |
+| 清理 | trim 危险操作（需勾选确认），会先设好选择再发 `/cs trim` |
+| 热力图 | 维度选择、窗口半径滑条、拉取/清空，绿=已生成、灰=存在但不在图案内、金=图案内还没生成 |
+| 日志 | 全部 / 仅警告错误 / 仅指令 三种过滤，复制全部·复制异常·导出文件·清空 |
+| 配置 | 运行粒子、完成提示音、藤蔓角饰、进度自动刷新秒数、热力图默认窗口、保存/恢复默认、打开面板文件夹、`/cs set` 改动备份与回滚、打开开源项目 |
 
-核心特色
-1. 全功能可视化GUI界面
-彻底告别繁琐的指令输入！整合 Chunksmith 全部常用功能，在可视化面板内直观配置：生成区域、生成半径、中心坐标，支持一键启动、暂停、继续区块生成任务。界面布局简洁易懂，新手也能快速上手。
-2. 实时进度可视化监控
-界面内置实时数据展示面板，可直观查看当前生成进度、生成速度、剩余预计时间、IO限流状态，替代原版/cs progress查询指令，任务状态一目了然，无需反复输入指令查询。
-3. 无缝适配原版机制
-完全依附原版 Chunksmith 运行，兼容其所有优化特性：自适应磁盘IO限流、负载自动避让、后台静默生成、大内存稳定机制、写队列背压保护等。GUI仅作为操作入口，不冲突、不篡改、不影响原版模组的稳定性与优化效果。同时兼容 Forge、Fabric、NeoForge 多加载器版本。
-4. 轻量化无负担
-模组体积小巧，无多余冗余功能，不占用服务器性能。仅提供交互层优化，无论是单机生存、小型整合包，还是大型多人服务器，均可无感运行，不会造成卡顿、掉帧、内存占用升高问题。
-
-使用优势
-- 零基础上手：摆脱指令记忆，可视化点击操作，告别输错指令导致的任务失败
-- 操作更高效：一站式管理生成、暂停、续跑、进度查询，简化服主日常运维工作
-- 适配全场景：支持玩家在线时后台操作，不影响游戏体验，适配所有 Chunksmith 使用场景
-- 百分百兼容：继承原版冲突规避、自动适配配置等特性，开箱即用
-
-使用说明
-只需同时安装 原版 Chunksmith 核心模组 与本 GUI 附属模组，进入游戏即可打开可视化操作界面，无需额外配置、无需修改参数，自动适配原版所有配置文件，直接实现可视化区块预生成管理。
-
-适用人群
-适合所有使用 Chunksmith 进行区块预生成的单机玩家、整合包制作者、MC服务器服主，专为觉得指令操作繁琐、想要更便捷可视化管理区块生成任务的用户打造。
-
-下载地址：https://www.curseforge.com/minecraft/mc-mods/chunksmith-modern-gui
+配置写在 `<游戏目录>/config/chunksmith_modern_gui/panel-settings.properties`，
+导出的日志/备份也在这个目录；旧版 `<游戏目录>/chunksmith_panel/` 里的文件首次启动会自动迁移过来。

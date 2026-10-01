@@ -1,20 +1,73 @@
-plugins { id 'java'; id 'net.minecraftforge.gradle' version '[6.0,6.2)' }
-version = '1.0.4-r23'
-group = 'cn.blockforge.generated.chunksmithchunksmithgu'
-base { archivesName = 'chunksmith_modern_gui' }
-java.toolchain.languageVersion = JavaLanguageVersion.of(17)
-minecraft { mappings channel: 'official', version: '1.20.1' }
-dependencies { minecraft 'net.minecraftforge:forge:1.20.1-47.4.0' }
-tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
-processResources {
-    def props = [mod_id: 'chunksmith_modern_gui', mod_name: 'Chunksmith modern gui', mod_version: project.version,
-                 minecraft_version: '1.20.1', forge_version: '47.4.0']
-    inputs.properties props
-    filteringCharset = 'UTF-8'
-    filesMatching('META-INF/mods.toml') { expand props }
+plugins {
+    id 'java-library'
+    id 'net.neoforged.moddev' version '2.0.141'
 }
-jar {
-    // 开源协议随包分发：作者 BarryAlen777
+
+version = mod_version
+group = mod_group_id
+
+base {
+    archivesName = mod_archive_name
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+
+tasks.withType(AbstractArchiveTask).configureEach {
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+}
+
+neoForge {
+    version = neo_version
+
+    runs {
+        client {
+            client()
+        }
+        server {
+            server()
+            programArgument '--nogui'
+        }
+    }
+
+    mods {
+        "${mod_id}" {
+            sourceSet(sourceSets.main)
+        }
+    }
+}
+
+var generateModMetadata = tasks.register('generateModMetadata', ProcessResources) {
+    var replaceProperties = [
+            minecraft_version      : minecraft_version,
+            minecraft_version_range: minecraft_version_range,
+            neo_version            : neo_version,
+            neo_version_range      : neo_version_range,
+            loader_version_range   : loader_version_range,
+            mod_id                 : mod_id,
+            mod_name               : mod_name,
+            mod_license            : mod_license,
+            mod_version            : mod_version,
+            mod_authors            : mod_authors
+    ]
+    inputs.properties replaceProperties
+    // 模板里有中文（模组描述），必须显式按 UTF-8 读写；
+    // 默认的 platform encoding 会把中文写成乱码。
+    // 另外 gradle.properties 本身是按 ISO-8859-1 解析的，所以中文一律写在模板里，
+    // 不要放进 gradle.properties。
+    filteringCharset = 'UTF-8'
+    expand replaceProperties
+    from 'src/main/templates'
+    into 'build/generated/sources/modMetadata'
+}
+sourceSets.main.resources.srcDir generateModMetadata
+neoForge.ideSyncTask generateModMetadata
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+// 开源协议随包分发：作者 BarryAlen777（与原 Forge 版本行为一致）
+tasks.named('jar', Jar) {
     from('LICENSE') { into 'META-INF' }
 }
-jar.finalizedBy('reobfJar')

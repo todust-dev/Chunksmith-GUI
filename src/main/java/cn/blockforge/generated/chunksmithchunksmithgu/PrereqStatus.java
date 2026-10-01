@@ -2,10 +2,10 @@ package cn.blockforge.generated.chunksmithchunksmithgu;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.api.distmarker.OnlyIn;
-import net.minecraftforge.fml.ModList;
-import net.minecraftforge.forgespi.language.IModInfo;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.api.distmarker.OnlyIn;
+import net.neoforged.fml.ModList;
+import net.neoforged.neoforgespi.language.IModInfo;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -55,7 +55,7 @@ public final class PrereqStatus {
             ModList list = ModList.get();
             // 优先精确 id
             for (String id : new String[]{"chunksmith", "chunkysmith", "chunky"}) {
-                Optional<? extends net.minecraftforge.fml.ModContainer> c = list.getModContainerById(id);
+                Optional<? extends net.neoforged.fml.ModContainer> c = list.getModContainerById(id);
                 if (c.isPresent()) {
                     IModInfo info = c.get().getModInfo();
                     localModId = info.getModId();
@@ -91,8 +91,8 @@ public final class PrereqStatus {
      * 其子节点里有 start/trim/set ⇒ 当前玩家是管理级（树按权限过滤过）。
      *
      * <p>只认客户端连接，所以标 {@code @OnlyIn(Dist.CLIENT)}：专用服务器加载本类时
-     * Forge 会把整个方法删掉，服务端不会因为这里引用 {@code Minecraft} 而报
-     * “invalid dist DEDICATED_SERVER”。</p>
+     * NeoForge 的 RuntimeDistCleaner 会把整个方法删掉，服务端不会因为这里引用
+     * {@code Minecraft} 而报 “invalid dist DEDICATED_SERVER”。</p>
      */
     @OnlyIn(Dist.CLIENT)
     public static synchronized boolean refreshTree() {

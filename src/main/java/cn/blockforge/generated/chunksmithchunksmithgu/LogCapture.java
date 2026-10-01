@@ -4,9 +4,9 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvents;
-import net.minecraftforge.client.event.ClientChatReceivedEvent;
-import net.minecraftforge.common.MinecraftForge;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.neoforged.neoforge.client.event.ClientChatReceivedEvent;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.bus.api.SubscribeEvent;
 
 import java.util.List;
 import java.util.Locale;
@@ -35,6 +35,9 @@ import java.util.regex.Pattern;
  *      所以“已完成”这一行要无条件补满，不能拿这行的百分比去覆盖。
  *   2. 中文完成文案里没有“完成”二字，只写“任务结束于 … 总运行时长: …”，
  *      只认英文关键词会让中文客户端永远卡在“正在生成”。
+ *
+ * <p>1.21.1/NeoForge：事件类改为 {@code net.neoforged.neoforge.client.event.ClientChatReceivedEvent}
+ * （{@code getMessage()} 不变），事件总线改为 {@link NeoForge#EVENT_BUS}。</p>
  */
 public final class LogCapture {
 
@@ -59,7 +62,7 @@ public final class LogCapture {
     }
 
     public static void init() {
-        MinecraftForge.EVENT_BUS.register(INSTANCE);
+        NeoForge.EVENT_BUS.register(INSTANCE);
     }
 
     @SubscribeEvent

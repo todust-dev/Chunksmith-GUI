@@ -158,7 +158,11 @@ public class PanelScreen extends Screen {
         dt = Math.max(0.001f, Math.min(0.1f, (now - lastFrameMs) / 1000f));
         lastFrameMs = now;
 
-        this.renderBackground(g);
+        // 1.20.1 的 Screen#renderBackground(GuiGraphics) 在「世界里」画的就是
+        // fillGradient(0, 0, width, height, -1072689136, -804253680) 这一层暗色蒙版。
+        // 1.21.1 的同名方法换成了「模糊背景 + 菜单底图」，会把世界整片盖住、观感差异很大；
+        // renderTransparentBackground 的字节码恰好就是上面那层 fillGradient，所以改调它。
+        this.renderTransparentBackground(g);
         computeTransform();
         double vx = (mouseX - ox) / scale;
         double vy = (mouseY - oy) / scale;
@@ -280,7 +284,7 @@ public class PanelScreen extends Screen {
         double vx = (mx - ox) / scale, vy = (my - oy) / scale;
         if (!inside(vx, vy)) return false;
         boolean hit = routeClick(vx, vy, button);
-        if (!hit) clearFocus();
+        if (!hit) clearWidgetFocus();
         return hit;
     }
 
@@ -317,19 +321,21 @@ public class PanelScreen extends Screen {
     }
 
     @Override
-    public boolean mouseScrolled(double mx, double my, double amount) {
+    public boolean mouseScrolled(double mx, double my, double scrollX, double scrollY) {
         computeTransform();
         double vx = (mx - ox) / scale, vy = (my - oy) / scale;
-        for (Widget w : widgets) if (w.active && w.visible && w.mouseScrolled(vx, vy, amount)) return true;
-        for (Widget w : chrome) if (w.active && w.visible && w.mouseScrolled(vx, vy, amount)) return true;
-        return super.mouseScrolled(mx, my, amount);
+        // 1.20.5 起 GuiEventListener#mouseScrolled 增加了横向分量 scrollX；
+        // 面板控件只吃纵向分量，所以这里把 scrollY 当作原来的 amount 传下去。
+        for (Widget w : widgets) if (w.active && w.visible && w.mouseScrolled(vx, vy, scrollY)) return true;
+        for (Widget w : chrome) if (w.active && w.visible && w.mouseScrolled(vx, vy, scrollY)) return true;
+        return super.mouseScrolled(mx, my, scrollX, scrollY);
     }
 
     @Override
     public boolean keyPressed(int key, int scan, int mods) {
         if (focus != null) {
             if (focus.keyPressed(key, scan, mods)) return true;
-            if (key == GLFW.GLFW_KEY_ESCAPE) { clearFocus(); return true; }
+            if (key == GLFW.GLFW_KEY_ESCAPE) { clearWidgetFocus(); return true; }
         }
         return super.keyPressed(key, scan, mods);
     }
@@ -351,7 +357,16 @@ public class PanelScreen extends Screen {
         if (focus != null) focus.setFocus(true);
     }
 
-    private void clearFocus() {
+    /**
+     * 清掉当前聚焦的控件。
+     *
+     * <p>1.20.1 里这个方法叫 {@code clearFocus()}（private）；1.21.1 的 {@code Screen}
+     * 新增了一个同名的 {@code public void clearFocus()}，private 无法覆盖 public，
+     * 编译直接报「无法覆盖 Screen 中的 clearFocus()；正在尝试分配更低的访问权限」。
+     * 两者语义完全无关（一个管我们自己的输入焦点，一个是原版的 ComponentPath 焦点机制），
+     * 所以这里改名为 {@code clearWidgetFocus()}。</p>
+     */
+    private void clearWidgetFocus() {
         if (focus != null) focus.setFocus(false);
         focus = null;
     }

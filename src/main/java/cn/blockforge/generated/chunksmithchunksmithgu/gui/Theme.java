@@ -21,7 +21,8 @@ public final class Theme {
     public static final ResourceLocation CORNER = rl("corner_flora");
 
     private static ResourceLocation rl(String name) {
-        return new ResourceLocation(ChunkSmithGuiMod.MOD_ID, "textures/gui/" + name + ".png");
+        // 1.21 起 ResourceLocation 的构造器改为 private，必须走静态工厂。
+        return ResourceLocation.fromNamespaceAndPath(ChunkSmithGuiMod.MOD_ID, "textures/gui/" + name + ".png");
     }
 
     // ---- 调色板（ARGB），取自参考图 ----
