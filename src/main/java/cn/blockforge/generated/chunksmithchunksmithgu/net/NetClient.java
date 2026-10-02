@@ -1,6 +1,7 @@
 package cn.blockforge.generated.chunksmithchunksmithgu.net;
 
 import cn.blockforge.generated.chunksmithchunksmithgu.PanelState;
+import cn.blockforge.generated.chunksmithchunksmithgu.Texts;
 import net.minecraft.client.Minecraft;
 import net.neoforged.neoforge.network.PacketDistributor;
 
@@ -49,7 +50,7 @@ public final class NetClient {
                     }
                 } catch (Throwable e) {
                     if (requestId == PanelState.heatRequestId) {
-                        PanelState.log(PanelState.Level.WARN, "热力图扫描失败: " + e);
+                        PanelState.log(PanelState.Level.WARN, Texts.t("log.heatScanFailed", e));
                     }
                 }
             }, "ChunkSmithPanel-Heatmap-SP");
@@ -61,7 +62,7 @@ public final class NetClient {
             PacketDistributor.sendToServer(new Net.HeatmapC2S(requestId, dim, cx, cz, half));
         } catch (Throwable t) {
             PanelState.heatNoServer = true;
-            PanelState.log(PanelState.Level.WARN, "服务器未安装面板模组服务端部分，热力图需要服务端支持。");
+            PanelState.log(PanelState.Level.WARN, Texts.t("log.noServerSide"));
         }
     }
 }

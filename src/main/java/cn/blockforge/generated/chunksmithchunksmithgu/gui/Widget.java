@@ -1,5 +1,6 @@
 package cn.blockforge.generated.chunksmithchunksmithgu.gui;
 
+import cn.blockforge.generated.chunksmithchunksmithgu.Texts;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -91,7 +92,7 @@ public abstract class Widget {
 
     public static class Button extends Widget {
         public String label = "";
-        public String iconPath = null;       // Icons 里的程序化图标名
+        public String iconPath = null;       // Icons 里的图标名（按钮统一按 12px 画）
         public Runnable onPress = () -> { };
         public int textColor = Theme.BTN_TEXT;
         public boolean stone;                // 石质外观（重置/取消类）
@@ -110,7 +111,10 @@ public abstract class Widget {
             boolean down = System.currentTimeMillis() < pressUntil;
             Theme.buttonFace(g, x, y, w, h, hov, down, active, stone);
             Font fnt = Minecraft.getInstance().font;
-            int iconW = iconPath != null ? 11 : 0;
+            // 按钮图标用小图标尺寸（Icons.SMALL_SIZE = 12）：贴图 icons/btn/<名字>.png 就是这个边长，
+            // 1:1 绘制不重采样。（原来是 11——16 格压到 11 个像素丢的笔画更多；12 正好贴合按钮
+            // 内部高度：24x16 的按钮上下各留 2px、左右各留 4px。）
+            int iconW = iconPath != null ? Icons.SMALL_SIZE : 0;
             int total = iconW + (iconW > 0 ? 4 : 0) + fnt.width(label);
             int tx = x + (w - total) / 2;
             int ty = y + (h - 8) / 2 + (down ? 1 : 0);
@@ -172,7 +176,7 @@ public abstract class Widget {
         public String value() { return options.isEmpty() ? "" : options.get(index); }
 
         public void syncLabel() {
-            label = prefix + display.get(index) + "  >";
+            label = prefix + display.get(index) + Texts.t("widget.cycle.suffix");
         }
 
         @Override
@@ -202,7 +206,7 @@ public abstract class Widget {
         }
 
         public void syncLabel() {
-            label = name + (on ? "  开" : "  关");
+            label = name + Texts.t(on ? "widget.toggle.on" : "widget.toggle.off");
             textColor = on ? Theme.OK : Theme.INK_SOFT;
         }
 
@@ -620,7 +624,7 @@ public abstract class Widget {
         public void render(GuiGraphics g, int mx, int my, float dt) {
             Font f = Minecraft.getInstance().font;
             Theme.card(g, x, y, w, h);
-            if (icon != null) Icons.draw(g, icon, x + 8, y + 8, 16, 0xFFFFFFFF);
+            if (icon != null) Icons.draw(g, icon, x + 8, y + 8, Icons.LARGE_SIZE, 0xFFFFFFFF);
             g.drawString(f, title, x + 30, y + 6, Theme.INK, true);
             String v = valueText == null ? "" : valueText.get();
             g.drawString(f, v, x + w - 10 - f.width(v), y + 6, valueColor, true);
@@ -723,7 +727,7 @@ public abstract class Widget {
                     cn.blockforge.generated.chunksmithchunksmithgu.PanelState.heat;
             Font f = Minecraft.getInstance().font;
             if (heat == null) {
-                String s = "尚无数据：点右侧 拉取热力图";
+                String s = Texts.t("heat.empty");
                 g.drawString(f, s, x + w / 2 - f.width(s) / 2, y + h / 2 - 4, Theme.BTN_TEXT_OFF, false);
                 return;
             }
@@ -745,7 +749,8 @@ public abstract class Widget {
             // 玩家位置十字
             g.fill(cx0 + size / 2 - 4, cy0 + size / 2, cx0 + size / 2 + 5, cy0 + size / 2 + 1, 0xFFFFFFFF);
             g.fill(cx0 + size / 2, cy0 + size / 2 - 4, cx0 + size / 2 + 1, cy0 + size / 2 + 5, 0xFFFFFFFF);
-            String info = heat.dim + "  ±" + half + " 区块  " + Theme.fmtCount(heat.chunks.size()) + " chunks";
+            String info = Texts.t("heat.canvas.info",
+                    heat.dim, half, Theme.fmtCount(heat.chunks.size()));
             g.drawString(f, info, x + 4, y + h - 12, Theme.TEXT_LIGHT, false);
         }
 

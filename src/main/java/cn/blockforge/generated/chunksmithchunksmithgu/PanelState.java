@@ -134,11 +134,11 @@ public final class PanelState {
 
     /** set 历史文本（key / 旧值 → 新值）。 */
     public static synchronized String setsDump() {
-        StringBuilder sb = new StringBuilder("# ChunkSmith /cs set 改动备份\n");
+        StringBuilder sb = new StringBuilder(Texts.t("dump.setsHeader") + '\n');
         java.text.SimpleDateFormat fmt = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
         for (SetRec r : SETS) {
             sb.append(fmt.format(new java.util.Date(r.time))).append("  ")
-              .append(r.key).append(": ").append(r.prev == null ? "(初始)" : r.prev)
+              .append(r.key).append(": ").append(r.prev == null ? Texts.t("dump.setInitial") : r.prev)
               .append(" -> ").append(r.value).append('\n');
         }
         return sb.toString();

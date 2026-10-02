@@ -19,19 +19,19 @@ public final class CommandBuilder {
         List<String> problems = new ArrayList<>();
         String w = PanelState.world == null ? "" : PanelState.world.trim();
         if (w.isEmpty() || !WORLD_OK.matcher(w).matches())
-            problems.add("世界名只允许字母数字与 _ - .");
+            problems.add(Texts.t("validate.world"));
         if (PanelState.radius < 1 || PanelState.radius > 1_000_000)
-            problems.add("半径需在 1 ~ 1000000 之间");
+            problems.add(Texts.t("validate.radius"));
         if (needsRadius2() && (PanelState.radius2 < 1 || PanelState.radius2 > PanelState.radius))
-            problems.add("第二半径需在 1 ~ 主半径之间");
+            problems.add(Texts.t("validate.radius2"));
         if (PanelState.centerMode.equals("coords")) {
             if (PanelState.centerX < -30_000_000 || PanelState.centerX > 30_000_000)
-                problems.add("X 坐标超出世界边界");
+                problems.add(Texts.t("validate.centerX"));
             if (PanelState.centerZ < -30_000_000 || PanelState.centerZ > 30_000_000)
-                problems.add("Z 坐标超出世界边界");
+                problems.add(Texts.t("validate.centerZ"));
         }
         if (PanelState.shape.equals("star") && !needsRadius2())
-            problems.add("星形需要第二半径");
+            problems.add(Texts.t("validate.star"));
         return problems;
     }
 
@@ -77,12 +77,12 @@ public final class CommandBuilder {
     /** 预览文本（多行，行号注释用 # 开头，执行时跳过）。 */
     public static String buildPreview() {
         List<String> seq = buildSequence();
+        // 星形/椭圆才带第二半径，拼成 "500" 或 "500/200"
+        String radius = String.valueOf(PanelState.radius);
+        if (shapeHasRadius2(PanelState.shape) && PanelState.radius2 > 0) radius += "/" + PanelState.radius2;
         StringBuilder sb = new StringBuilder();
-        sb.append("# ChunkSmith 预生成任务\n");
-        sb.append("# 形状 ").append(PanelState.shape)
-          .append(" · 半径 ").append(PanelState.radius);
-        if (shapeHasRadius2(PanelState.shape) && PanelState.radius2 > 0) sb.append('/').append(PanelState.radius2);
-        sb.append(" · 中心 ").append(PanelState.centerMode).append('\n');
+        sb.append(Texts.t("preview.header")).append('\n');
+        sb.append(Texts.t("preview.summary", PanelState.shape, radius, PanelState.centerMode)).append('\n');
         for (String s : seq) sb.append(s).append('\n');
         return sb.toString();
     }

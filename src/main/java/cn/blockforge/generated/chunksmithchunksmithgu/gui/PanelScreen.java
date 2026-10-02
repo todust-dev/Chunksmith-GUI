@@ -6,6 +6,7 @@ import cn.blockforge.generated.chunksmithchunksmithgu.CommandRunner;
 import cn.blockforge.generated.chunksmithchunksmithgu.PanelState;
 import cn.blockforge.generated.chunksmithchunksmithgu.PrereqStatus;
 import cn.blockforge.generated.chunksmithchunksmithgu.Settings;
+import cn.blockforge.generated.chunksmithchunksmithgu.Texts;
 import cn.blockforge.generated.chunksmithchunksmithgu.net.Net;
 import cn.blockforge.generated.chunksmithchunksmithgu.net.NetClient;
 import net.minecraft.Util;
@@ -38,18 +39,32 @@ public class PanelScreen extends Screen {
     public enum Tab { GENERATE, TASK, TRIM, HEAT, LOG, CONFIG }
 
     private static final Tab[] TABS = Tab.values();
-    private static final String[] TAB_LABEL = {"生成", "任务", "清理", "热力图", "日志", "配置"};
-    private static final String[] TAB_TITLE = {"生成设置", "生成进度", "清理区块", "热力图", "运行日志", "面板配置"};
+
+    // 界面文案全部外置到 assets/chunksmith_modern_gui/lang/zh_cn.json，这里只留键名。
+    // 想改字直接改语言文件（或写个资源包覆盖），不用重新编译。
+    private static final String[] TAB_LABEL_KEYS = {
+            "tab.generate", "tab.task", "tab.trim", "tab.heat", "tab.log", "tab.config"};
+    private static final String[] TAB_TITLE_KEYS = {
+            "title.generate", "title.task", "title.trim", "title.heat", "title.log", "title.config"};
 
     /** 虚拟设计分辨率：面板按这套坐标画，再整体缩放到屏幕。 */
     public static final int VW = 660;
     public static final int VH = 400;
 
+    /** 形状 / 中心 / 日志过滤的「值」是要发给 Chunksmith 的指令参数，绝对不能翻译。 */
     private static final List<String> SHAPES = List.of("square", "circle", "diamond", "triangle", "star", "oval");
-    private static final List<String> SHAPE_NAMES = List.of("方形", "圆形", "菱形", "三角形", "星形", "椭圆");
+    private static final String[] SHAPE_NAME_KEYS =
+            {"shape.square", "shape.circle", "shape.diamond", "shape.triangle", "shape.star", "shape.oval"};
     private static final List<String> CENTERS = List.of("here", "spawn", "coords");
-    private static final List<String> CENTER_NAMES = List.of("当前位置", "世界出生点", "指定坐标");
-    private static final String[] LOG_FILTER_NAMES = {"全部", "仅警告/错误", "仅指令"};
+    private static final String[] CENTER_NAME_KEYS = {"center.here", "center.spawn", "center.coords"};
+    private static final String[] LOG_FILTER_KEYS = {"logfilter.all", "logfilter.warn", "logfilter.cmd"};
+
+    /** 把一串键按当前语言翻出来。 */
+    private static List<String> tr(String... keys) {
+        List<String> out = new ArrayList<>(keys.length);
+        for (String k : keys) out.add(Texts.t(k));
+        return out;
+    }
 
     // ---------- 变换（虚拟坐标 <-> 屏幕坐标） ----------
     private double scale = 1.0;
@@ -108,7 +123,7 @@ public class PanelScreen extends Screen {
     private long nextProbeMs = 0;
 
     public PanelScreen() {
-        super(Component.literal("ChunkSmith 指令面板"));
+        super(Component.literal(Texts.t("panel.title")));
     }
 
     @Override
@@ -175,7 +190,7 @@ public class PanelScreen extends Screen {
         g.pose().scale((float) scale, (float) scale, 1f);
 
         Theme.drawPanel(g, 0, 0, VW, VH, now);
-        Theme.drawTitlePlate(g, VW / 2, 0, TAB_TITLE[tab.ordinal()]);
+        Theme.drawTitlePlate(g, VW / 2, 0, Texts.t(TAB_TITLE_KEYS[tab.ordinal()]));
         drawStatusStrip(g);
 
         for (Widget w : chrome) if (w.visible) w.render(g, (int) vx, (int) vy, dt);
@@ -221,19 +236,20 @@ public class PanelScreen extends Screen {
         String s;
         int color;
         if (PrereqStatus.localPresent()) {
-            s = "前置 " + (PrereqStatus.localModName == null ? "ChunkSmith" : PrereqStatus.localModName)
-                    + (PrereqStatus.localVersion == null ? "" : " v" + PrereqStatus.localVersion)
-                    + " · 权限 " + permText() + " · 就绪";
+            String name = PrereqStatus.localModName == null ? "ChunkSmith" : PrereqStatus.localModName;
+            String ver = PrereqStatus.localVersion == null ? "" : " v" + PrereqStatus.localVersion;
+            s = Texts.t("status.ready", name, ver, permText());
             color = Theme.OK;
         } else if (PrereqStatus.commandTreeSeen) {
-            s = "服务端已装前置（/" + cs() + " 可用）· 权限 " + permText();
+            s = Texts.t("status.serverOnly", cs(), permText());
             color = Theme.OK;
         } else {
-            s = "未检测到 ChunkSmith 前置：把它放进 mods 文件夹；服务端已装时可勾选“忽略前置检测”";
+            s = Texts.t("status.missing");
             color = Theme.DANGER;
         }
         if (PrereqStatus.versionMismatch()) {
-            s = "前置版本不一致（本地 " + PrereqStatus.localVersion + " / 服务端 " + PrereqStatus.serverVersion + "）· " + s;
+            s = Texts.t("status.versionMismatch",
+                    PrereqStatus.localVersion, PrereqStatus.serverVersion, s);
             color = Theme.WARN;
         }
         g.drawString(f, s, 24, 62, color, true);
@@ -248,13 +264,13 @@ public class PanelScreen extends Screen {
         double fit = Math.max(0.35, Math.min((width - 8) / (double) VW, (height - 8) / (double) VH));
         double real = Math.min(Math.max(0.4, pendingPercent / 100.0), fit);
         if (scaleInfoLb != null) {
-            scaleInfoLb.text = Math.round(real * 100) + "%  ·  "
-                    + Math.round(VW * real) + "×" + Math.round(VH * real);
+            scaleInfoLb.text = Texts.t("panel.scale.info", Math.round(real * 100),
+                    Math.round(VW * real), Math.round(VH * real));
         }
 
         long usedMb = (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) / (1024L * 1024L);
-        g.drawString(f, "FPS " + mc.getFps(), 368, by + 4, Theme.INK_SOFT, false);
-        g.drawString(f, "内存 " + usedMb + "MB", 416, by + 4, Theme.INK_SOFT, false);
+        g.drawString(f, Texts.t("panel.fps", mc.getFps()), 368, by + 4, Theme.INK_SOFT, false);
+        g.drawString(f, Texts.t("panel.memory", usedMb), 416, by + 4, Theme.INK_SOFT, false);
     }
 
     private void drawToast(GuiGraphics g, long now) {
@@ -381,22 +397,23 @@ public class PanelScreen extends Screen {
         int tx = (VW - total) / 2;
         for (int i = 0; i < TABS.length; i++) {
             final Tab t = TABS[i];
-            chrome.add(new TabButton(tx + i * (tabW + gap), 40, tabW, tabH, TAB_LABEL[i], t, () -> switchTab(t)));
+            chrome.add(new TabButton(tx + i * (tabW + gap), 40, tabW, tabH,
+                    Texts.t(TAB_LABEL_KEYS[i]), t, () -> switchTab(t)));
         }
 
         int by = VH - 30;
-        chrome.add(new Widget.Label(20, by + 4, "界面大小", false));
+        chrome.add(new Widget.Label(20, by + 4, Texts.t("panel.uiScale"), false));
 
         // 滑条右边的数字输入框已按要求删除，比例直接显示在右侧信息文字里
         scaleSlider = new Widget.Slider(62, by, 132, 16, 50, 200, pendingPercent, 5);
         scaleSlider.onChange = v -> pendingPercent = v;
         chrome.add(scaleSlider);
 
-        Widget.Button apply = new Widget.Button(200, by, 76, 16, "确认调整");
+        Widget.Button apply = new Widget.Button(200, by, 76, 16, Texts.t("btn.applyUiScale"));
         apply.onPress = () -> {
             Settings.uiScalePercent = pendingPercent;
             Settings.save();
-            toast("界面大小已保存：" + pendingPercent + "%");
+            toast(Texts.t("toast.uiScaleSaved", pendingPercent));
         };
         chrome.add(apply);
 
@@ -409,7 +426,7 @@ public class PanelScreen extends Screen {
         prev.iconPath = Icons.PREV;
         prev.onPress = () -> cycleTab(-1);
         chrome.add(prev);
-        chrome.add(iconHint(bx, "上一页"));
+        chrome.add(iconHint(bx, Texts.t("hint.prev")));
 
         playPauseBtn = new Widget.Button(bx + 28, by, 24, 16, "");
         playPauseBtn.iconPath = PanelState.task == PanelState.Task.RUNNING ? Icons.PAUSE : Icons.PLAY;
@@ -419,20 +436,20 @@ public class PanelScreen extends Screen {
             playPauseBtn.iconPath = running ? Icons.PLAY : Icons.PAUSE;
         };
         chrome.add(playPauseBtn);
-        playPauseHint = iconHint(bx + 28, "暂停");
+        playPauseHint = iconHint(bx + 28, Texts.t("hint.pause"));
         chrome.add(playPauseHint);
 
         Widget.Button refresh = new Widget.Button(bx + 56, by, 24, 16, "");
         refresh.iconPath = Icons.REFRESH;
-        refresh.onPress = () -> { PrereqStatus.refreshTree(); toast("状态已刷新"); };
+        refresh.onPress = () -> { PrereqStatus.refreshTree(); toast(Texts.t("toast.statusRefreshed")); };
         chrome.add(refresh);
-        chrome.add(iconHint(bx + 56, "刷新"));
+        chrome.add(iconHint(bx + 56, Texts.t("hint.refresh")));
 
         Widget.Button next = new Widget.Button(bx + 84, by, 24, 16, "");
         next.iconPath = Icons.NEXT;
         next.onPress = () -> cycleTab(1);
         chrome.add(next);
-        chrome.add(iconHint(bx + 84, "下一页"));
+        chrome.add(iconHint(bx + 84, Texts.t("hint.next")));
     }
 
     /** 图标键下方的一行中文说明（居中，画在底部木框上）。 */
@@ -522,27 +539,27 @@ public class PanelScreen extends Screen {
         int xL = 28, wL = 300;
         int y = 76;
 
-        widgets.add(new Widget.Label(xL, y, "世界名（/cs world）", false));
+        widgets.add(new Widget.Label(xL, y, Texts.t("gen.world"), false));
         Widget.Field wf = Widget.Field.str(xL, y + 11, wL, 16, PanelState.world);
         wf.onChanged = () -> { PanelState.world = wf.value; refreshPreview(); };
         widgets.add(wf);
 
         y += 34;
-        widgets.add(new Widget.Label(xL, y, "形状", false));
+        widgets.add(new Widget.Label(xL, y, Texts.t("gen.shape"), false));
         Widget.Cycle shape = new Widget.Cycle(xL, y + 11, wL, 16, "",
-                SHAPES, SHAPE_NAMES, Math.max(0, SHAPES.indexOf(PanelState.shape)));
+                SHAPES, tr(SHAPE_NAME_KEYS), Math.max(0, SHAPES.indexOf(PanelState.shape)));
         shape.onChange = i -> { PanelState.shape = shape.value(); refreshPreview(); };
         widgets.add(shape);
 
         y += 34;
-        widgets.add(new Widget.Label(xL, y, "中心模式", false));
+        widgets.add(new Widget.Label(xL, y, Texts.t("gen.center"), false));
         Widget.Cycle center = new Widget.Cycle(xL, y + 11, wL, 16, "",
-                CENTERS, CENTER_NAMES, Math.max(0, CENTERS.indexOf(PanelState.centerMode)));
+                CENTERS, tr(CENTER_NAME_KEYS), Math.max(0, CENTERS.indexOf(PanelState.centerMode)));
         center.onChange = i -> { PanelState.centerMode = center.value(); refreshPreview(); };
         widgets.add(center);
 
         y += 34;
-        widgets.add(new Widget.Label(xL, y, "中心坐标 X / Z（指定坐标时生效）", false));
+        widgets.add(new Widget.Label(xL, y, Texts.t("gen.coords"), false));
         Widget.Field xf = Widget.Field.num(xL, y + 11, 146, 16, PanelState.centerX, -30000000, 30000000);
         xf.onChanged = () -> { PanelState.centerX = (int) xf.longValue(); refreshPreview(); };
         widgets.add(xf);
@@ -551,7 +568,7 @@ public class PanelScreen extends Screen {
         widgets.add(zf);
 
         y += 34;
-        widgets.add(new Widget.Label(xL, y, "主半径 / 第二半径（区块，星形与椭圆用得上）", false));
+        widgets.add(new Widget.Label(xL, y, Texts.t("gen.radius"), false));
         Widget.Field rf = Widget.Field.num(xL, y + 11, 146, 16, PanelState.radius, 1, 1000000);
         rf.onChanged = () -> { PanelState.radius = (int) rf.longValue(); refreshPreview(); };
         widgets.add(rf);
@@ -560,34 +577,34 @@ public class PanelScreen extends Screen {
         widgets.add(r2);
 
         y += 34;
-        Widget.Toggle ignore = new Widget.Toggle(xL, y, 190, 16, "忽略前置检测", PanelState.forceIgnorePrereq);
+        Widget.Toggle ignore = new Widget.Toggle(xL, y, 190, 16, Texts.t("common.ignorePrereq"), PanelState.forceIgnorePrereq);
         ignore.onChange = b -> PanelState.forceIgnorePrereq = b;
         widgets.add(ignore);
-        Widget.Toggle particles = new Widget.Toggle(xL + 198, y, 102, 16, "运行粒子", Settings.particles);
+        Widget.Toggle particles = new Widget.Toggle(xL + 198, y, 102, 16, Texts.t("common.particles"), Settings.particles);
         particles.onChange = b -> { Settings.particles = b; Settings.save(); };
         widgets.add(particles);
 
         int xR = 344, wR = VW - 28 - xR;
-        widgets.add(new Widget.Label(xR, 76, "命令预览（点某行可改，执行的就是它）", false));
+        widgets.add(new Widget.Label(xR, 76, Texts.t("gen.preview"), false));
         previewTa = new Widget.TextArea(xR, 88, wR, 190);
         previewTa.onEdited = ls -> manualPreview = true;
         refreshPreview();
         widgets.add(previewTa);
 
-        Widget.Button start = new Widget.Button(xR, 286, wR, 22, "开始生成");
+        Widget.Button start = new Widget.Button(xR, 286, wR, 22, Texts.t("btn.start"));
         start.iconPath = Icons.PLAY;
         start.onPress = this::doStart;
         widgets.add(start);
 
         int half = (wR - 6) / 2;
-        Widget.Button copy = new Widget.Button(xR, 314, half, 18, "复制命令");
+        Widget.Button copy = new Widget.Button(xR, 314, half, 18, Texts.t("btn.copyCmd"));
         copy.iconPath = Icons.COPY;
         copy.onPress = () -> {
             CommandRunner.copy(previewTa == null ? CommandBuilder.buildPreview() : previewTa.join());
-            toast("命令已复制到剪贴板");
+            toast(Texts.t("toast.cmdCopied"));
         };
         widgets.add(copy);
-        Widget.Button reset = new Widget.Button(xR + half + 6, 314, half, 18, "重置表单");
+        Widget.Button reset = new Widget.Button(xR + half + 6, 314, half, 18, Texts.t("btn.resetForm"));
         reset.stone = true;
         reset.onPress = () -> {
             PanelState.world = "world";
@@ -599,7 +616,7 @@ public class PanelScreen extends Screen {
             PanelState.radius2 = 0;
             switchTab(Tab.TASK);
             switchTab(Tab.GENERATE);
-            toast("表单已重置为默认值");
+            toast(Texts.t("toast.formReset"));
         };
         widgets.add(reset);
     }
@@ -613,26 +630,26 @@ public class PanelScreen extends Screen {
     private void doStart() {
         List<String> problems = CommandBuilder.validate();
         if (!problems.isEmpty()) {
-            toast("参数有误：" + problems.get(0));
-            PanelState.log(PanelState.Level.WARN, "表单校验未通过：" + String.join("；", problems));
+            toast(Texts.t("toast.validateFailed", problems.get(0)));
+            PanelState.log(PanelState.Level.WARN, Texts.t("log.formInvalid", String.join("；", problems)));
             return;
         }
         if (!PrereqStatus.prereqOk() && !PanelState.forceIgnorePrereq) {
-            toast("没检测到 ChunkSmith 前置，请先安装或勾选“忽略前置检测”");
+            toast(Texts.t("toast.noPrereq"));
             return;
         }
         if (!PrereqStatus.isOperator() && !PanelState.forceIgnorePrereq && !Minecraft.getInstance().isSingleplayer()) {
-            toast("当前权限不足（需要管理员），或勾选“忽略前置检测”再试");
+            toast(Texts.t("toast.noPerm"));
             return;
         }
         List<String> lines = CommandBuilder.parsePreviewLines(
                 previewTa == null ? CommandBuilder.buildPreview() : previewTa.join());
         if (lines.isEmpty()) {
-            toast("命令预览是空的");
+            toast(Texts.t("toast.previewEmpty"));
             return;
         }
         CommandRunner.sendSequence(lines);
-        toast("已发送 " + lines.size() + " 条指令");
+        toast(Texts.t("toast.sent", lines.size()));
     }
 
     // ---- 任务页 ----
@@ -640,77 +657,82 @@ public class PanelScreen extends Screen {
         int x0 = 28, cw = 372;
         int y = 76;
         // 总进度：没有任务时画成空条（不跑流水灯），只有任务在跑但数字还没来时才是“未知”
-        widgets.add(new Widget.RowCard(x0, y, cw, 46, "总进度", Icons.GRID,
+        widgets.add(new Widget.RowCard(x0, y, cw, 46, Texts.t("task.card.total"), Icons.GRID,
                 () -> PanelState.percent < 0
                         ? (PanelState.task == PanelState.Task.RUNNING ? -1 : 0)
                         : PanelState.percent / 100.0,
-                () -> PanelState.percent < 0 ? "--" : String.format("%.0f%%", PanelState.percent)));
+                () -> PanelState.percent < 0
+                        ? Texts.t("value.unknown")
+                        : Texts.t("task.percent.value", String.format("%.0f", PanelState.percent))));
         y += 54;
-        widgets.add(new Widget.RowCard(x0, y, cw, 46, "已生成区块", Icons.CHART,
+        widgets.add(new Widget.RowCard(x0, y, cw, 46, Texts.t("task.card.processed"), Icons.CHART,
                 () -> (PanelState.processed >= 0 && PanelState.total > 0)
                         ? PanelState.processed / (double) PanelState.total
                         : (PanelState.task == PanelState.Task.RUNNING ? -1 : 0),
-                () -> Theme.fmtCount(PanelState.processed) + " / " + Theme.fmtCount(PanelState.total)));
+                () -> Texts.t("task.processed.value",
+                        Theme.fmtCount(PanelState.processed), Theme.fmtCount(PanelState.total))));
         y += 54;
-        widgets.add(new Widget.RowCard(x0, y, cw, 46, "生成速度", Icons.PLAY,
+        widgets.add(new Widget.RowCard(x0, y, cw, 46, Texts.t("task.card.rate"), Icons.PLAY,
                 () -> PanelState.rate < 0 ? 0 : Math.min(1.0, PanelState.rate / 50.0),
-                () -> PanelState.rate < 0 ? "--" : String.format("%.1f 区块/秒", PanelState.rate)));
+                () -> PanelState.rate < 0
+                        ? Texts.t("value.unknown")
+                        : Texts.t("task.rate.value", String.format("%.1f", PanelState.rate))));
 
-        widgets.add(new Widget.Label(x0, 240, "最近状态与异常", false));
+        widgets.add(new Widget.Label(x0, 240, Texts.t("task.recent"), false));
         taskStatus = new Widget.ScrollText(x0, 252, cw, 110);
         widgets.add(taskStatus);
 
         int bx = 416, bw = 216;
         int by = 76, pitch = 30;
-        Widget.Button forceStart = new Widget.Button(bx, by, bw, 24, "开始生成");
+        Widget.Button forceStart = new Widget.Button(bx, by, bw, 24, Texts.t("btn.start"));
         forceStart.iconPath = Icons.PLAY;
         forceStart.onPress = this::doStart;
         widgets.add(forceStart);
-        Widget.Button pause = new Widget.Button(bx, by += pitch, bw, 24, "暂停生成");
+        Widget.Button pause = new Widget.Button(bx, by += pitch, bw, 24, Texts.t("btn.pause"));
         pause.iconPath = Icons.PAUSE;
-        pause.onPress = () -> { CommandRunner.send(cs() + " pause"); toast("已发送暂停"); };
+        pause.onPress = () -> { CommandRunner.send(cs() + " pause"); toast(Texts.t("toast.paused")); };
         widgets.add(pause);
-        Widget.Button resume = new Widget.Button(bx, by += pitch, bw, 24, "继续生成");
+        Widget.Button resume = new Widget.Button(bx, by += pitch, bw, 24, Texts.t("btn.resume"));
         resume.iconPath = Icons.PLAY;
-        resume.onPress = () -> { CommandRunner.send(cs() + " continue"); toast("已发送继续"); };
+        resume.onPress = () -> { CommandRunner.send(cs() + " continue"); toast(Texts.t("toast.resumed")); };
         widgets.add(resume);
-        Widget.Button cancel = new Widget.Button(bx, by += pitch, bw, 24, "取消生成");
+        Widget.Button cancel = new Widget.Button(bx, by += pitch, bw, 24, Texts.t("btn.cancel"));
         cancel.iconPath = Icons.STOP;
         cancel.textColor = Theme.DANGER;
         cancel.onPress = () -> {
             CommandRunner.send(cs() + " cancel");
-            toast("已发送取消；服务端还要一次确认，请点下面的「确认取消」");
+            toast(Texts.t("toast.cancelSent"));
         };
         widgets.add(cancel);
         // 服务端收到 /cs cancel 后仍要 /cs confirm 才算数，所以单独给一个确认键
-        Widget.Button confirmCancel = new Widget.Button(bx, by += pitch, bw, 24, "确认取消（/cs confirm）");
+        Widget.Button confirmCancel = new Widget.Button(bx, by += pitch, bw, 24, Texts.t("btn.confirmCancel"));
         confirmCancel.iconPath = Icons.STOP;
         confirmCancel.textColor = Theme.DANGER;
         confirmCancel.onPress = () -> {
             CommandRunner.send(cs() + " confirm");
-            toast("已发送 /cs confirm，取消已确认");
+            toast(Texts.t("toast.cancelConfirmed"));
         };
         widgets.add(confirmCancel);
-        Widget.Button prog = new Widget.Button(bx, by += pitch, bw, 24, "刷新进度");
+        Widget.Button prog = new Widget.Button(bx, by += pitch, bw, 24, Texts.t("btn.refreshProgress"));
         prog.iconPath = Icons.REFRESH;
-        prog.onPress = () -> { CommandRunner.send(cs() + " progress"); toast("已请求最新进度"); };
+        prog.onPress = () -> { CommandRunner.send(cs() + " progress"); toast(Texts.t("toast.progressRequested")); };
         widgets.add(prog);
-        Widget.Button clear = new Widget.Button(bx, by += pitch, bw, 24, "标记为已结束");
+        Widget.Button clear = new Widget.Button(bx, by += pitch, bw, 24, Texts.t("btn.markDone"));
         clear.stone = true;
         clear.onPress = () -> {
             PanelState.clearTask();
-            toast("本地状态已清零（不影响服务端任务）");
+            toast(Texts.t("toast.localCleared"));
         };
         widgets.add(clear);
 
         // 原来这里的“总进度条 + 百分比”和上面的总进度卡片重复，已按要求删掉，改放两条说明。
-        Widget.Label tip1 = new Widget.Label(bx, 296, "面板只显示进度，不会自己开始生成。", false);
+        Widget.Label tip1 = new Widget.Label(bx, 296, Texts.t("task.tip1"), false);
         tip1.colorOverride = Theme.INK_SOFT;
         widgets.add(tip1);
-        Widget.Label tip2 = new Widget.Label(bx, 310, "前置回「没有在运行的任务」时，", false);
+        Widget.Label tip2 = new Widget.Label(bx, 310, Texts.t("task.tip2"), false);
         tip2.colorOverride = Theme.INK_SOFT;
         widgets.add(tip2);
-        Widget.Label tip3 = new Widget.Label(bx, 322, "任务会自动标记为已完成。", false);
+        Widget.Label tip3 = new Widget.Label(bx, 322, Texts.t("task.tip3"), false);
         tip3.colorOverride = Theme.INK_SOFT;
         widgets.add(tip3);
     }
@@ -718,33 +740,33 @@ public class PanelScreen extends Screen {
     // ---- 清理页 ----
     private void buildTrim() {
         int x0 = 28, w0 = 300;
-        Widget.Label warn = new Widget.Label(x0, 76, "清理（trim）会删除所选范围外的区块，不能撤销。", false);
+        Widget.Label warn = new Widget.Label(x0, 76, Texts.t("trim.warn"), false);
         warn.colorOverride = Theme.DANGER;
         widgets.add(warn);
-        widgets.add(new Widget.Label(x0, 90, "确认世界、中心与半径无误后再执行。", false));
+        widgets.add(new Widget.Label(x0, 90, Texts.t("trim.warn2"), false));
 
         int y = 108;
-        widgets.add(new Widget.Label(x0, y, "世界名", false));
+        widgets.add(new Widget.Label(x0, y, Texts.t("trim.world"), false));
         Widget.Field wf = Widget.Field.str(x0, y + 11, w0, 16, PanelState.world);
         wf.onChanged = () -> { PanelState.world = wf.value; rebuildTrimPreview(); };
         widgets.add(wf);
 
         y += 30;
-        widgets.add(new Widget.Label(x0, y, "按什么形状清理", false));
+        widgets.add(new Widget.Label(x0, y, Texts.t("trim.shape"), false));
         Widget.Cycle shape = new Widget.Cycle(x0, y + 11, w0, 16, "",
-                SHAPES, SHAPE_NAMES, Math.max(0, SHAPES.indexOf(PanelState.shape)));
+                SHAPES, tr(SHAPE_NAME_KEYS), Math.max(0, SHAPES.indexOf(PanelState.shape)));
         shape.onChange = i -> { PanelState.shape = shape.value(); rebuildTrimPreview(); };
         widgets.add(shape);
 
         y += 30;
-        widgets.add(new Widget.Label(x0, y, "保留范围的中心（范围以内保留）", false));
+        widgets.add(new Widget.Label(x0, y, Texts.t("trim.center"), false));
         Widget.Cycle center = new Widget.Cycle(x0, y + 11, w0, 16, "",
-                CENTERS, CENTER_NAMES, Math.max(0, CENTERS.indexOf(PanelState.centerMode)));
+                CENTERS, tr(CENTER_NAME_KEYS), Math.max(0, CENTERS.indexOf(PanelState.centerMode)));
         center.onChange = i -> { PanelState.centerMode = center.value(); rebuildTrimPreview(); };
         widgets.add(center);
 
         y += 30;
-        widgets.add(new Widget.Label(x0, y, "中心坐标 X / Z（选“指定坐标”时生效）", false));
+        widgets.add(new Widget.Label(x0, y, Texts.t("trim.coords"), false));
         Widget.Field xf = Widget.Field.num(x0, y + 11, 146, 16, PanelState.centerX, -30000000, 30000000);
         xf.onChanged = () -> { PanelState.centerX = (int) xf.longValue(); rebuildTrimPreview(); };
         widgets.add(xf);
@@ -753,44 +775,44 @@ public class PanelScreen extends Screen {
         widgets.add(zf);
 
         y += 30;
-        widgets.add(new Widget.Label(x0, y, "保留半径（区块）", false));
+        widgets.add(new Widget.Label(x0, y, Texts.t("trim.radius"), false));
         Widget.Field rf = Widget.Field.num(x0, y + 11, w0, 16, PanelState.radius, 1, 1000000);
         rf.onChanged = () -> { PanelState.radius = (int) rf.longValue(); rebuildTrimPreview(); };
         widgets.add(rf);
 
         y += 32;
-        Widget.Toggle confirm = new Widget.Toggle(x0, y, 300, 16, "我确认要清理", PanelState.trimConfirmed);
+        Widget.Toggle confirm = new Widget.Toggle(x0, y, 300, 16, Texts.t("trim.confirm"), PanelState.trimConfirmed);
         widgets.add(confirm);
 
         y += 24;
-        Widget.Button run = new Widget.Button(x0, y, 300, 22, "执行清理");
+        Widget.Button run = new Widget.Button(x0, y, 300, 22, Texts.t("btn.trimRun"));
         run.iconPath = Icons.TRIM;
         run.textColor = Theme.DANGER;
         run.active = PanelState.trimConfirmed;
         confirm.onChange = b -> { PanelState.trimConfirmed = b; run.active = b; };
         run.onPress = () -> {
-            if (!PanelState.trimConfirmed) { toast("请先勾选确认"); return; }
+            if (!PanelState.trimConfirmed) { toast(Texts.t("toast.trimNeedConfirm")); return; }
             if (!PrereqStatus.prereqOk() && !PanelState.forceIgnorePrereq) {
-                toast("没检测到 Chunksmith 前置");
+                toast(Texts.t("toast.noPrereqShort"));
                 return;
             }
             CommandRunner.sendSequence(CommandBuilder.buildTrim());
-            toast("已先把选择设好，再发送清理指令");
+            toast(Texts.t("toast.trimSent"));
         };
         widgets.add(run);
 
         int xR = 344, wR = VW - 28 - xR;
-        widgets.add(new Widget.Label(xR, 76, "将要执行的指令", false));
-        Widget.Label seqNote = new Widget.Label(xR, 90, "先设好选择，最后 /cs trim 才生效", false);
+        widgets.add(new Widget.Label(xR, 76, Texts.t("trim.cmds"), false));
+        Widget.Label seqNote = new Widget.Label(xR, 90, Texts.t("trim.cmdsNote"), false);
         seqNote.colorOverride = Theme.INK_SOFT;
         widgets.add(seqNote);
         trimTa = new Widget.ScrollText(xR, 104, wR, 148);
         widgets.add(trimTa);
-        Widget.Button copy = new Widget.Button(xR, 258, wR, 18, "复制清理指令");
+        Widget.Button copy = new Widget.Button(xR, 258, wR, 18, Texts.t("btn.copyTrim"));
         copy.iconPath = Icons.COPY;
         copy.onPress = () -> {
             CommandRunner.copy(String.join("\n", CommandBuilder.buildTrim()));
-            toast("已复制");
+            toast(Texts.t("toast.copied"));
         };
         widgets.add(copy);
         rebuildTrimPreview();
@@ -800,8 +822,8 @@ public class PanelScreen extends Screen {
         if (trimTa == null) return;
         List<Widget.Line> out = new ArrayList<>();
         for (String s : CommandBuilder.buildTrim()) out.add(new Widget.Line("/ " + s, 0xFFE8D9AE));
-        out.add(new Widget.Line("# 形状 " + PanelState.shape + " · 中心 " + PanelState.centerMode
-                + " · 保留半径 " + PanelState.radius, Theme.BTN_TEXT_OFF));
+        out.add(new Widget.Line(Texts.t("trim.previewNote",
+                PanelState.shape, PanelState.centerMode, PanelState.radius), Theme.BTN_TEXT_OFF));
         trimTa.setLines(out);
     }
 
@@ -818,13 +840,13 @@ public class PanelScreen extends Screen {
         rebuildDims();
 
         int xR = 444, wR = 188;
-        widgets.add(new Widget.Label(xR, 76, "维度", false));
+        widgets.add(new Widget.Label(xR, 76, Texts.t("heat.dim"), false));
         Widget.Cycle dim = new Widget.Cycle(xR, 87, wR, 16, "",
                 new ArrayList<>(dims), new ArrayList<>(dimNames), Math.max(0, dims.indexOf(heatDim)));
         dim.onChange = i -> { heatDim = dim.value(); };
         widgets.add(dim);
 
-        widgets.add(new Widget.Label(xR, 116, "窗口半径（区块，最大 256）", false));
+        widgets.add(new Widget.Label(xR, 116, Texts.t("heat.half"), false));
         Widget.Slider half = new Widget.Slider(xR, 127, wR, 16, 16, 256, heatHalf, 16);
         half.onChange = v -> {
             heatHalf = v;
@@ -834,25 +856,25 @@ public class PanelScreen extends Screen {
         heatHalfLb = new Widget.Label(xR, 148, "", false);
         widgets.add(heatHalfLb);
 
-        Widget.Button pull = new Widget.Button(xR, 172, wR, 22, "拉取热力图");
+        Widget.Button pull = new Widget.Button(xR, 172, wR, 22, Texts.t("btn.pullHeat"));
         pull.iconPath = Icons.GRID;
         pull.onPress = this::pullHeatmap;
         widgets.add(pull);
 
-        Widget.Button clear = new Widget.Button(xR, 200, wR, 18, "清空显示");
+        Widget.Button clear = new Widget.Button(xR, 200, wR, 18, Texts.t("btn.clearDisplay"));
         clear.stone = true;
-        clear.onPress = () -> { PanelState.heat = null; toast("已清空热力图"); };
+        clear.onPress = () -> { PanelState.heat = null; toast(Texts.t("toast.heatCleared")); };
         widgets.add(clear);
 
-        widgets.add(new Widget.Label(xR, 230, "绿色 = 已生成", false));
-        Widget.Label l2 = new Widget.Label(xR, 244, "灰色 = 存在但不在图案内", false);
+        widgets.add(new Widget.Label(xR, 230, Texts.t("heat.legend.green"), false));
+        Widget.Label l2 = new Widget.Label(xR, 244, Texts.t("heat.legend.gray"), false);
         l2.colorOverride = Theme.INK_SOFT;
         widgets.add(l2);
-        Widget.Label l3 = new Widget.Label(xR, 258, "金色 = 图案内还没生成", false);
+        Widget.Label l3 = new Widget.Label(xR, 258, Texts.t("heat.legend.gold"), false);
         l3.colorOverride = Theme.WARN;
         widgets.add(l3);
-        Widget.Label l4 = new Widget.Label(xR, 280, "数据来自存档 region 文件头，", false);
-        Widget.Label l5 = new Widget.Label(xR, 292, "不加载区块、不影响服务器。", false);
+        Widget.Label l4 = new Widget.Label(xR, 280, Texts.t("heat.note1"), false);
+        Widget.Label l5 = new Widget.Label(xR, 292, Texts.t("heat.note2"), false);
         widgets.add(l4);
         widgets.add(l5);
     }
@@ -885,41 +907,41 @@ public class PanelScreen extends Screen {
     private void pullHeatmap() {
         if (!PrereqStatus.prereqOk() && !PrereqStatus.localPresent()) {
             // 热力图是本模组自己读存档，不一定需要前置，这里只提醒一句
-            PanelState.log(PanelState.Level.WARN, "前置缺失，但热力图仍会尝试读取本地/服务端存档。");
+            PanelState.log(PanelState.Level.WARN, Texts.t("log.heatPrereqMissing"));
         }
         int[] c = heatCenterChunks();
         if (canvas != null) { canvas.scx = c[0]; canvas.scz = c[1]; canvas.half = heatHalf; }
         NetClient.requestHeatmap(heatDim, c[0], c[1], heatHalf);
-        toast("正在扫描 " + heatDim + "（±" + heatHalf + " 区块）");
+        toast(Texts.t("toast.heatScanning", heatDim, heatHalf));
     }
 
     // ---- 日志页 ----
     private void buildLog() {
-        widgets.add(new Widget.Label(28, 78, "过滤", false));
+        widgets.add(new Widget.Label(28, 78, Texts.t("log.filter"), false));
         Widget.Cycle filter = new Widget.Cycle(64, 74, 150, 18, "",
-                Arrays.asList(LOG_FILTER_NAMES), logFilter);
+                tr(LOG_FILTER_KEYS), logFilter);
         filter.onChange = i -> logFilter = i;
         widgets.add(filter);
 
-        Widget.Button copyAll = new Widget.Button(300, 74, 78, 18, "复制全部");
+        Widget.Button copyAll = new Widget.Button(300, 74, 78, 18, Texts.t("btn.copyAll"));
         copyAll.onPress = () -> {
             CommandRunner.copy(PanelState.logDump());
-            toast("日志已复制");
+            toast(Texts.t("toast.logCopied"));
         };
         widgets.add(copyAll);
-        Widget.Button copyErr = new Widget.Button(384, 74, 78, 18, "复制异常");
+        Widget.Button copyErr = new Widget.Button(384, 74, 78, 18, Texts.t("btn.copyErrors"));
         copyErr.onPress = () -> {
             String s = PanelState.logErrorDump();
-            CommandRunner.copy(s.isBlank() ? "(没有警告或错误)" : s);
-            toast("异常日志已复制");
+            CommandRunner.copy(s.isBlank() ? Texts.t("log.noErrors") : s);
+            toast(Texts.t("toast.errorsCopied"));
         };
         widgets.add(copyErr);
-        Widget.Button export = new Widget.Button(468, 74, 78, 18, "导出文件");
+        Widget.Button export = new Widget.Button(468, 74, 78, 18, Texts.t("btn.exportFile"));
         export.onPress = () -> exportText("log-" + stamp() + ".txt", PanelState.logDump());
         widgets.add(export);
-        Widget.Button clear = new Widget.Button(552, 74, 80, 18, "清空");
+        Widget.Button clear = new Widget.Button(552, 74, 80, 18, Texts.t("btn.clear"));
         clear.stone = true;
-        clear.onPress = () -> { PanelState.clearLog(); toast("日志已清空"); };
+        clear.onPress = () -> { PanelState.clearLog(); toast(Texts.t("toast.logCleared")); };
         widgets.add(clear);
 
         logTa = new Widget.ScrollText(28, 100, 604, 262);
@@ -933,7 +955,7 @@ public class PanelScreen extends Screen {
             if (logFilter == 2 && e.level != PanelState.Level.CMD) continue;
             out.add(new Widget.Line(e.text, levelColor(e.level)));
         }
-        if (out.isEmpty()) out.add(new Widget.Line("（暂无日志）", Theme.BTN_TEXT_OFF));
+        if (out.isEmpty()) out.add(new Widget.Line(Texts.t("log.empty"), Theme.BTN_TEXT_OFF));
         return out;
     }
 
@@ -950,36 +972,36 @@ public class PanelScreen extends Screen {
     // ---- 配置页 ----
     private void buildConfig() {
         int x0 = 28, w0 = 280;
-        widgets.add(new Widget.Label(x0, 76, "面板选项", true));
+        widgets.add(new Widget.Label(x0, 76, Texts.t("cfg.options"), true));
 
-        Widget.Toggle particles = new Widget.Toggle(x0, 94, w0, 16, "运行粒子", Settings.particles);
+        Widget.Toggle particles = new Widget.Toggle(x0, 94, w0, 16, Texts.t("common.particles"), Settings.particles);
         particles.onChange = b -> Settings.particles = b;
         widgets.add(particles);
-        Widget.Toggle sounds = new Widget.Toggle(x0, 116, w0, 16, "完成提示音", Settings.sounds);
+        Widget.Toggle sounds = new Widget.Toggle(x0, 116, w0, 16, Texts.t("common.sounds"), Settings.sounds);
         sounds.onChange = b -> Settings.sounds = b;
         widgets.add(sounds);
-        Widget.Toggle deco = new Widget.Toggle(x0, 138, w0, 16, "藤蔓角饰", Settings.decorations);
+        Widget.Toggle deco = new Widget.Toggle(x0, 138, w0, 16, Texts.t("common.decorations"), Settings.decorations);
         deco.onChange = b -> Settings.decorations = b;
         widgets.add(deco);
 
-        widgets.add(new Widget.Label(x0, 164, "进度自动刷新（秒，0 = 关）", false));
+        widgets.add(new Widget.Label(x0, 164, Texts.t("cfg.refresh"), false));
         Widget.Slider refresh = new Widget.Slider(x0, 176, 190, 16, 0, 60, Settings.progressRefreshSec, 1);
         refresh.onChange = v -> Settings.progressRefreshSec = v;
         widgets.add(refresh);
         refreshLb = new Widget.Label(x0 + 198, 180, "", false);
         widgets.add(refreshLb);
 
-        widgets.add(new Widget.Label(x0, 202, "热力图默认窗口（区块）", false));
+        widgets.add(new Widget.Label(x0, 202, Texts.t("cfg.heatRadius"), false));
         Widget.Slider heatR = new Widget.Slider(x0, 214, 190, 16, 16, 256, Settings.heatmapRadius, 16);
         heatR.onChange = v -> Settings.heatmapRadius = v;
         widgets.add(heatR);
         heatRadiusLb = new Widget.Label(x0 + 198, 218, "", false);
         widgets.add(heatRadiusLb);
 
-        Widget.Button save = new Widget.Button(x0, 244, 132, 20, "保存设置");
-        save.onPress = () -> { Settings.save(); toast("设置已保存"); };
+        Widget.Button save = new Widget.Button(x0, 244, 132, 20, Texts.t("btn.saveSettings"));
+        save.onPress = () -> { Settings.save(); toast(Texts.t("toast.settingsSaved")); };
         widgets.add(save);
-        Widget.Button def = new Widget.Button(x0 + 148, 244, 132, 20, "恢复默认");
+        Widget.Button def = new Widget.Button(x0 + 148, 244, 132, 20, Texts.t("btn.restoreDefaults"));
         def.stone = true;
         def.onPress = () -> {
             Settings.particles = true;
@@ -990,55 +1012,55 @@ public class PanelScreen extends Screen {
             Settings.save();
             switchTab(Tab.GENERATE);
             switchTab(Tab.CONFIG);
-            toast("已恢复默认设置");
+            toast(Texts.t("toast.defaultsRestored"));
         };
         widgets.add(def);
 
-        Widget.Button open = new Widget.Button(x0, 272, 280, 20, "打开面板文件夹");
+        Widget.Button open = new Widget.Button(x0, 272, 280, 20, Texts.t("btn.openFolder"));
         open.iconPath = Icons.FOLDER;
         open.onPress = () -> {
             try {
                 Path d = ChunkSmithGuiPaths.ensurePanelDir();
                 Util.getPlatform().openFile(d.toFile());
             } catch (Throwable t) {
-                toast("打不开文件夹：" + t.getMessage());
+                toast(Texts.t("toast.openFolderFailed", t.getMessage()));
             }
         };
         widgets.add(open);
 
         // ---- 关于：作者与开源地址 ----
-        widgets.add(new Widget.Label(28, 336, "作者 BarryAlen777", false));
-        Widget.Button repo = new Widget.Button(150, 330, 158, 18, "打开开源项目");
+        widgets.add(new Widget.Label(28, 336, Texts.t("cfg.author"), false));
+        Widget.Button repo = new Widget.Button(150, 330, 158, 18, Texts.t("btn.openRepo"));
         repo.stone = true;
         repo.onPress = () -> {
             try {
                 Util.getPlatform().openUri("https://github.com/BarryAlen777/Chunksmith_modern_gui");
             } catch (Throwable t) {
-                toast("打不开链接：" + t.getMessage());
+                toast(Texts.t("toast.openLinkFailed", t.getMessage()));
             }
         };
         widgets.add(repo);
 
         int xR = 340, wR = VW - 28 - xR;
-        widgets.add(new Widget.Label(xR, 76, "/cs set 改动备份（可回滚）", true));
+        widgets.add(new Widget.Label(xR, 76, Texts.t("cfg.sets"), true));
         setsTa = new Widget.ScrollText(xR, 94, wR, 176);
         widgets.add(setsTa);
 
-        Widget.Button rollback = new Widget.Button(xR, 278, 138, 18, "回滚最近一次");
+        Widget.Button rollback = new Widget.Button(xR, 278, 138, 18, Texts.t("btn.rollback"));
         rollback.iconPath = Icons.ROLLBACK;
         rollback.onPress = () -> {
             String[] r = PanelState.popRollback();
-            if (r == null) { toast("没有可回滚的改动"); return; }
+            if (r == null) { toast(Texts.t("toast.nothingToRollback")); return; }
             CommandRunner.send(cs() + " set " + r[0] + " " + r[1]);
-            toast("已回滚 " + r[0] + " = " + r[1]);
+            toast(Texts.t("toast.rolledBack", r[0], r[1]));
         };
         widgets.add(rollback);
-        Widget.Button export = new Widget.Button(xR + 146, 278, wR - 146, 18, "导出备份");
+        Widget.Button export = new Widget.Button(xR + 146, 278, wR - 146, 18, Texts.t("btn.exportBackup"));
         export.onPress = () -> exportText("sets-" + stamp() + ".txt", PanelState.setsDump());
         widgets.add(export);
-        Widget.Button clear = new Widget.Button(xR, 302, wR, 18, "清空备份记录");
+        Widget.Button clear = new Widget.Button(xR, 302, wR, 18, Texts.t("btn.clearBackup"));
         clear.stone = true;
-        clear.onPress = () -> { PanelState.clearSets(); toast("备份记录已清空"); };
+        clear.onPress = () -> { PanelState.clearSets(); toast(Texts.t("toast.backupCleared")); };
         widgets.add(clear);
     }
 
@@ -1048,14 +1070,14 @@ public class PanelScreen extends Screen {
         if (playPauseBtn != null) {
             boolean running = PanelState.task == PanelState.Task.RUNNING;
             playPauseBtn.iconPath = running ? Icons.PAUSE : Icons.PLAY;
-            if (playPauseHint != null) playPauseHint.text = running ? "暂停" : "继续";
+            if (playPauseHint != null) playPauseHint.text = Texts.t(running ? "hint.pause" : "hint.resume");
         }
         if (taskStatus != null) taskStatus.setLines(taskLines());
         if (logTa != null) logTa.setLines(logLines());
         if (setsTa != null) setsTa.setLines(setLines());
-        if (heatHalfLb != null) heatHalfLb.text = "当前 ±" + heatHalf + " 区块";
-        if (refreshLb != null) refreshLb.text = Settings.progressRefreshSec + " 秒";
-        if (heatRadiusLb != null) heatRadiusLb.text = Settings.heatmapRadius + " 区块";
+        if (heatHalfLb != null) heatHalfLb.text = Texts.t("task.halfInfo", heatHalf);
+        if (refreshLb != null) refreshLb.text = Texts.t("cfg.refresh.value", Settings.progressRefreshSec);
+        if (heatRadiusLb != null) heatRadiusLb.text = Texts.t("cfg.heatRadius.value", Settings.heatmapRadius);
         if (canvas != null) {
             canvas.half = heatHalf;
             int[] c = heatCenterChunks();
@@ -1067,14 +1089,17 @@ public class PanelScreen extends Screen {
     private List<Widget.Line> taskLines() {
         List<Widget.Line> out = new ArrayList<>();
         boolean idle = PanelState.task == PanelState.Task.NONE;
-        out.add(new Widget.Line("状态：" + taskText(PanelState.task), levelColor(
+        out.add(new Widget.Line(Texts.t("task.line.status", taskText(PanelState.task)), levelColor(
                 PanelState.task == PanelState.Task.FAILED ? PanelState.Level.ERROR : PanelState.Level.INFO)));
-        out.add(new Widget.Line("已耗时：" + (idle ? "--" : Theme.fmtDuration(PanelState.elapsedNow())), Theme.TEXT_LIGHT));
-        out.add(new Widget.Line("预计剩余：" + (idle ? "--" : Theme.fmtDuration(PanelState.etaMs)), Theme.TEXT_LIGHT));
-        out.add(new Widget.Line("异常 " + PanelState.errors + " 条 · 警告 " + PanelState.warnings + " 条",
+        out.add(new Widget.Line(Texts.t("task.line.elapsed",
+                idle ? Texts.t("value.unknown") : Theme.fmtDuration(PanelState.elapsedNow())), Theme.TEXT_LIGHT));
+        out.add(new Widget.Line(Texts.t("task.line.eta",
+                idle ? Texts.t("value.unknown") : Theme.fmtDuration(PanelState.etaMs)), Theme.TEXT_LIGHT));
+        out.add(new Widget.Line(Texts.t("task.line.errors", PanelState.errors, PanelState.warnings),
                 PanelState.errors > 0 ? 0xFFFF7A66 : Theme.TEXT_LIGHT));
-        out.add(new Widget.Line("原始回包：" + (PanelState.taskRawStatus == null || PanelState.taskRawStatus.isBlank()
-                ? "（还没收到）" : PanelState.taskRawStatus), Theme.BTN_TEXT_OFF));
+        out.add(new Widget.Line(Texts.t("task.line.raw",
+                PanelState.taskRawStatus == null || PanelState.taskRawStatus.isBlank()
+                        ? Texts.t("task.raw.none") : PanelState.taskRawStatus), Theme.BTN_TEXT_OFF));
         return out;
     }
 
@@ -1084,10 +1109,11 @@ public class PanelScreen extends Screen {
         SimpleDateFormat fmt = new SimpleDateFormat("HH:mm:ss");
         for (int i = recs.size() - 1; i >= 0 && out.size() < 40; i--) {
             PanelState.SetRec r = recs.get(i);
-            out.add(new Widget.Line(fmt.format(new Date(r.time)) + "  " + r.key + ": "
-                    + (r.prev == null ? "(初始)" : r.prev) + " -> " + r.value, Theme.TEXT_LIGHT));
+            out.add(new Widget.Line(Texts.t("task.set.rec",
+                    fmt.format(new Date(r.time)), r.key,
+                    r.prev == null ? Texts.t("task.set.initial") : r.prev, r.value), Theme.TEXT_LIGHT));
         }
-        if (out.isEmpty()) out.add(new Widget.Line("（本次会话还没改过 /cs set）", Theme.BTN_TEXT_OFF));
+        if (out.isEmpty()) out.add(new Widget.Line(Texts.t("task.sets.empty"), Theme.BTN_TEXT_OFF));
         return out;
     }
 
@@ -1099,19 +1125,19 @@ public class PanelScreen extends Screen {
 
     private static String permText() {
         return switch (PrereqStatus.perm) {
-            case OPERATOR -> "管理员";
-            case READONLY -> "只读";
-            default -> "未知";
+            case OPERATOR -> Texts.t("perm.operator");
+            case READONLY -> Texts.t("perm.readonly");
+            default -> Texts.t("perm.unknown");
         };
     }
 
     private static String taskText(PanelState.Task t) {
         return switch (t) {
-            case RUNNING -> "正在生成";
-            case PAUSED -> "已暂停";
-            case DONE -> "已完成";
-            case FAILED -> "出错了";
-            default -> "空闲（没有正在跑的任务）";
+            case RUNNING -> Texts.t("task.state.running");
+            case PAUSED -> Texts.t("task.state.paused");
+            case DONE -> Texts.t("task.state.done");
+            case FAILED -> Texts.t("task.state.failed");
+            default -> Texts.t("task.state.idle");
         };
     }
 
@@ -1124,10 +1150,10 @@ public class PanelScreen extends Screen {
             Path d = ChunkSmithGuiPaths.ensurePanelDir();
             Path f = d.resolve(name);
             Files.writeString(f, content, StandardCharsets.UTF_8);
-            toast("已导出：" + f.getFileName());
-            PanelState.log(PanelState.Level.INFO, "已导出文件 " + f);
+            toast(Texts.t("toast.exported", f.getFileName()));
+            PanelState.log(PanelState.Level.INFO, Texts.t("log.exported", f));
         } catch (IOException e) {
-            toast("导出失败：" + e.getMessage());
+            toast(Texts.t("toast.exportFailed", e.getMessage()));
         }
     }
 }
