@@ -13,8 +13,6 @@ import java.util.Properties;
 public final class Settings {
     private static final Properties P = new Properties();
 
-    // 主题：holographic（全息科技） / light（原版轻量）
-    public static String theme = "holographic";
     // 任务运行时面板边缘的进度粒子
     public static boolean particles = true;
     // 完成提示音
@@ -43,7 +41,6 @@ public final class Settings {
             }
         } catch (IOException ignored) {
         }
-        theme = P.getProperty("theme", theme);
         particles = Boolean.parseBoolean(P.getProperty("particles", "true"));
         sounds = Boolean.parseBoolean(P.getProperty("sounds", "true"));
         try { progressRefreshSec = Integer.parseInt(P.getProperty("refresh", "5")); } catch (NumberFormatException ignored) { }
@@ -56,10 +53,10 @@ public final class Settings {
         uiScalePercent = Math.max(50, Math.min(200, uiScalePercent));
     }
 
+    /** 保存设置；失败会通过面板日志提示（之前静默吞异常，UI 还显示“已保存”）。 */
     public static void save() {
         try {
             Files.createDirectories(file().getParent());
-            P.setProperty("theme", theme);
             P.setProperty("particles", String.valueOf(particles));
             P.setProperty("sounds", String.valueOf(sounds));
             P.setProperty("refresh", String.valueOf(progressRefreshSec));
@@ -69,7 +66,8 @@ public final class Settings {
             try (var writer = Files.newBufferedWriter(file(), StandardCharsets.UTF_8)) {
                 P.store(writer, "ChunkSmith Panel Settings");
             }
-        } catch (IOException ignored) {
+        } catch (IOException e) {
+            PanelState.log(PanelState.Level.ERROR, Texts.t("log.settingsSaveFailed", e));
         }
     }
 }

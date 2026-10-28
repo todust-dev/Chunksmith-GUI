@@ -22,8 +22,8 @@ Chunksmith（`/cs` 指令族）前置模组的现代化图形面板，**从 Forg
 | 元数据文件 | `META-INF/mods.toml` | **`META-INF/neoforge.mods.toml`** | 文件名与字段名都变了，见 CHANGELOG §2 |
 | 资源包格式 | `pack_format 15` | **`pack_format 34`** | |
 | Java 包名 | `cn.blockforge.generated.chunksmithchunksmithgu` | **不变** | 保持逐行可比对，便于 diff 上游 |
-| mod id / 版本 | `chunksmith_modern_gui` / `1.0.4-r23` | **不变** | |
-| 产物名 | `chunksmith_modern_gui-1.0.4-r23.jar` | `chunksmith_modern_gui-neoforge-1.21.1-1.0.4-r23.jar` | 加后缀避免与 1.20.1 Forge 版同名 jar 冲突 |
+| mod id / 版本 | `chunksmith_modern_gui` / `1.0.4-r23` | `chunksmith_modern_gui` / **`1.2.0-r30`** | 跟随上游 1.2.0-r30 |
+| 产物名 | `chunksmith_modern_gui-1.0.4-r23.jar` | `chunksmith_modern_gui-neoforge-1.21.1-1.2.0-r30.jar` | 加后缀避免与 1.20.1 Forge 版同名 jar 冲突 |
 
 ## 构建
 
@@ -31,7 +31,7 @@ Chunksmith（`/cs` 指令族）前置模组的现代化图形面板，**从 Forg
 
 ```bash
 ./gradlew build --no-configuration-cache --no-daemon --console=plain
-# 产物：build/libs/chunksmith_modern_gui-neoforge-1.21.1-1.0.4-r23.jar
+# 产物：build/libs/chunksmith_modern_gui-neoforge-1.21.1-1.2.0-r30.jar
 ```
 
 其它命令：

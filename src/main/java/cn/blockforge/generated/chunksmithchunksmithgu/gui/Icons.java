@@ -58,7 +58,6 @@ public final class Icons {
     public static final String STOP = "stop";
     public static final String CHART = "chart";
     public static final String GRID = "grid";
-    public static final String GEAR = "gear";
     public static final String LOG = "log";
     public static final String TRIM = "trim";
     public static final String PREV = "prev";
@@ -67,12 +66,11 @@ public final class Icons {
     public static final String COPY = "copy";
     public static final String FOLDER = "folder";
     public static final String ROLLBACK = "rollback";
-    public static final String CLOSE = "close";
 
     /** 已知图标名。名字对不上就不画，避免画出原版那张「缺失贴图」的紫黑格子。 */
     private static final Set<String> KNOWN = Set.of(
-            PLAY, PAUSE, STOP, CHART, GRID, GEAR, LOG, TRIM,
-            PREV, NEXT, REFRESH, COPY, FOLDER, ROLLBACK, CLOSE);
+            PLAY, PAUSE, STOP, CHART, GRID, LOG, TRIM,
+            PREV, NEXT, REFRESH, COPY, FOLDER, ROLLBACK);
 
     /** 贴图地址只在首次用到时拼一次；键是「子目录/文件名」。 */
     private static final Map<String, ResourceLocation> CACHE = new HashMap<>();
@@ -113,4 +111,5 @@ public final class Icons {
             g.setColor(1.0F, 1.0F, 1.0F, 1.0F);
         }
     }
+
 }

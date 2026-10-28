@@ -48,7 +48,9 @@ public final class ChunkSmithGuiPaths {
                     }
                 }
             }
-        } catch (IOException ignored) {
+        } catch (IOException e) {
+            // 目录建不出来 / 旧文件迁移失败要能被看见，否则设置“莫名丢失”无处可查
+            System.err.println("[" + ChunkSmithGuiMod.MOD_ID + "] 配置目录准备失败: " + e);
         }
         return d;
     }

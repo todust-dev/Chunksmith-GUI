@@ -17,7 +17,6 @@ public final class Theme {
 
     public static final ResourceLocation PARCHMENT = rl("parchment");
     public static final ResourceLocation WOOD = rl("wood");
-    public static final ResourceLocation STONE = rl("stone");
     public static final ResourceLocation CORNER = rl("corner_flora");
 
     private static ResourceLocation rl(String name) {
@@ -48,6 +47,7 @@ public final class Theme {
     public static final int BTN_TEXT = 0xFF4B2F16;
     public static final int BTN_TEXT_OFF = 0xFF8A7F68;
     public static final int STONE_BTN = 0xFFB9BCBE;  // 石质按钮面（重置类）
+    public static final int STONE_HOVER = 0xFFD6D9DB; // 石质按钮悬停（更亮一档）
     public static final int STONE_BTN_TX = 0xFF44484C;
     public static final int OK = 0xFF4FA83B;
     public static final int WARN = 0xFFC98A1B;
@@ -61,15 +61,17 @@ public final class Theme {
     /** 边框厚度（虚拟像素）。 */
     public static final int FRAME = 14;
 
-    /** 16px 原尺寸平铺一块贴图到矩形区域。 */
+    /**
+     * 平铺一块 16px 贴图到矩形区域——一次 blit 画完。
+     *
+     * <p>原理和原版 {@code Screen.renderDirtBackground} 平铺 32px 泥土背景一样：
+     * 让 UV 超过 1，交给 GL 的 repeat 环绕自己一格一格接下去。以前是 16px 一格地循环 blit：
+     * 660×400 的面板光羊皮纸区（632×372）就要 40×24 = 960 次，加边框每帧一千一百多次，
+     * 全是同一张图的重复绘制。</p>
+     */
     public static void tile(GuiGraphics g, ResourceLocation tex, int x, int y, int w, int h) {
-        for (int ty = 0; ty < h; ty += 16) {
-            int th = Math.min(16, h - ty);
-            for (int tx = 0; tx < w; tx += 16) {
-                int tw = Math.min(16, w - tx);
-                g.blit(tex, x + tx, y + ty, 0F, 0F, tw, th, 16, 16);
-            }
-        }
+        if (w <= 0 || h <= 0) return;
+        g.blit(tex, x, y, 0F, 0F, w, h, 16, 16);
     }
 
     /**
@@ -131,7 +133,9 @@ public final class Theme {
         // 两侧的小木钉
         g.fill(x + 5, y + h / 2 - 1, x + 7, y + h / 2 + 1, WOOD_EDGE);
         g.fill(x + tw - 7, y + h / 2 - 1, x + tw - 5, y + h / 2 + 1, WOOD_EDGE);
-        g.drawString(f, title, centerX - f.width(title) / 2, y + (h - 8) / 2 + 1, INK, true);
+        // 不加字体阴影：面板整体按非整数倍缩放，阴影的 1px 偏移会被放大成明显的“重影”，
+        // 深棕字配深棕影子看着像字都糊成两层。浅色底本来也不需要阴影提亮。
+        g.drawString(f, title, centerX - f.width(title) / 2, y + (h - 8) / 2 + 1, INK, false);
     }
 
     /** 灰绿内容卡片：分区用的底。 */
@@ -160,7 +164,8 @@ public final class Theme {
 
     /** 米色像素按钮面（参考图“开始生成”那种）；hover 提亮，按下内凹。 */
     public static void buttonFace(GuiGraphics g, int x, int y, int w, int h, boolean hov, boolean down, boolean active, boolean stone) {
-        int face = !active ? BTN_DISABLED : (stone ? (hov ? STONE_BTN | 0x00101010 : STONE_BTN) : (hov ? BTN_HOVER : BTN_FACE));
+        // 石质按钮 hover 提亮（原来 |0x00101010 与本色几乎相同，看不出悬停效果）
+        int face = !active ? BTN_DISABLED : (stone ? (hov ? STONE_HOVER : STONE_BTN) : (hov ? BTN_HOVER : BTN_FACE));
         int oy = down ? 1 : 0;
         g.fill(x, y + oy, x + w, y + h + oy, face);
         stroke(g, x - 1, y - 1 + oy, x + w + 1, y + h + 1 + oy, BTN_BORDER);
@@ -194,12 +199,6 @@ public final class Theme {
         g.fill(x, y + h - 1, x + w, y + h, 0x55000000);
     }
 
-    /** 通用小文本绘制。 */
-    public static void text(GuiGraphics g, String s, int x, int y, int color, boolean shadow) {
-        Font f = Minecraft.getInstance().font;
-        g.drawString(f, s, x, y, color, shadow);
-    }
-
     /** 数字/耗时格式化。 */
     public static String fmtDuration(long ms) {
         if (ms < 0) return "--";
@@ -212,8 +211,9 @@ public final class Theme {
 
     public static String fmtCount(long n) {
         if (n < 0) return "--";
-        if (n >= 1_000_000) return String.format("%.2fM", n / 1e6);
-        if (n >= 10_000) return String.format("%.1fk", n / 1e3);
+        // Locale.ROOT：固定用小数点，不受系统区域影响出“1,5k”这种逗号小数
+        if (n >= 1_000_000) return String.format(java.util.Locale.ROOT, "%.2fM", n / 1e6);
+        if (n >= 10_000) return String.format(java.util.Locale.ROOT, "%.1fk", n / 1e3);
         return String.valueOf(n);
     }
 }

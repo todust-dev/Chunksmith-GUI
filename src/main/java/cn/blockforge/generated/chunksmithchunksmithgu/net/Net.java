@@ -3,6 +3,7 @@ package cn.blockforge.generated.chunksmithchunksmithgu.net;
 import cn.blockforge.generated.chunksmithchunksmithgu.ChunkSmithGuiMod;
 import cn.blockforge.generated.chunksmithchunksmithgu.PanelState;
 import cn.blockforge.generated.chunksmithchunksmithgu.PrereqStatus;
+import cn.blockforge.generated.chunksmithchunksmithgu.Texts;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
@@ -27,6 +28,12 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 面板与服务器之间的两条通道：
@@ -48,6 +55,11 @@ import java.util.Set;
  * NeoForge 对应的是 {@code registrar(...).optional()}，语义一致，所以这里必须显式加上，
  * 否则装了本模组的客户端会被拒绝连进没装它的服务器。</p>
  *
+ * <p><b>协议号现在是 {@value #PROTOCOL}</b>（原 Forge 版一直停在 "1"）。{@code HandshakeS2C}
+ * 加过 {@code MAX_WORLDS} 截断、{@code HeatmapS2C} 先加了 requestId、又加了末尾的 reason 字符串，
+ * 包体结构已经变了；协议号不一致时 NeoForge 不会建通道，面板退化成「服务器未安装服务端部分」的
+ * 可读提示，比按错位字段解析、最后抛异常断线安全。对端没装本模组（原版/他模服）仍然放行。</p>
+ *
  * <p><b>dist 安全</b>：这个类是客户端、服务端都会加载的公共类。它里面出现的
  * {@link MinecraftServer} / {@link ServerPlayer} 都是双端类，没有问题；而
  * {@code Minecraft} / 单人服务器这些客户端专属类型只在 {@link NetClient} 里出现。
@@ -56,12 +68,13 @@ import java.util.Set;
  */
 public final class Net {
 
-    /** 协议版本；与原 Forge 版的 {@code PROTOCOL = "1"} 保持一致。 */
-    public static final String PROTOCOL = "1";
-
+    /** 本模组的包 id（{@code chunksmith_modern_gui:<path>}）。 */
     private static ResourceLocation id(String path) {
         return ResourceLocation.fromNamespaceAndPath(ChunkSmithGuiMod.MOD_ID, path);
     }
+
+    /** 通道协议号。改过包体结构就必须 +1，理由见类注释。 */
+    public static final String PROTOCOL = "2";
 
     private Net() {
     }
@@ -109,6 +122,9 @@ public final class Net {
         }
     }
 
+    /** 世界列表最多回传条数，编解码两侧一致，不会静默截断错位。 */
+    private static final int MAX_WORLDS = 64;
+
     /** 服务端 → 客户端：前置模组 id / 版本 / 维度列表。 */
     public static final class HandshakeS2C implements CustomPacketPayload {
         public static final CustomPacketPayload.Type<HandshakeS2C> TYPE =
@@ -120,8 +136,9 @@ public final class Net {
         public final String prereqVersion; // 版本串
         public final List<String> worlds;  // 可选世界/维度列表
 
-        public HandshakeS2C(String id, String v, List<String> w) {
-            prereqId = id; prereqVersion = v; worlds = w;
+        HandshakeS2C(String id, String v, List<String> w) {
+            prereqId = id; prereqVersion = v;
+            worlds = w.size() > MAX_WORLDS ? new ArrayList<>(w.subList(0, MAX_WORLDS)) : w;
         }
 
         static void encode(FriendlyByteBuf b, HandshakeS2C m) {
@@ -138,8 +155,9 @@ public final class Net {
             String id = null, v = null;
             if (b.readBoolean()) { id = b.readUtf(64); v = b.readUtf(32); }
             int n = b.readVarInt();
+            if (n < 0 || n > MAX_WORLDS) throw new IllegalArgumentException("bad world count: " + n);
             List<String> w = new ArrayList<>();
-            for (int i = 0; i < n && i < 64; i++) w.add(b.readUtf(96));
+            for (int i = 0; i < n; i++) w.add(b.readUtf(96));
             return new HandshakeS2C(id, v, w);
         }
 
@@ -186,7 +204,11 @@ public final class Net {
                 PrereqStatus.serverRejected = false;
             } else {
                 PrereqStatus.serverVersion = null;
+                // 服务端明确说没装前置：多人下 prereqOk() 由命令树/本地兜底的
+                // isSingleplayer 分支挡住（见 PrereqStatus.computePrereqOk），
+                // 这里不写本地字段（Net 是双端类，不碰客户端状态）。
             }
+            PrereqStatus.invalidateOkCache();
         });
     }
 
@@ -212,7 +234,16 @@ public final class Net {
         }
 
         static HeatmapC2S decode(FriendlyByteBuf b) {
-            return new HeatmapC2S(b.readVarInt(), b.readUtf(128), b.readVarInt(), b.readVarInt(), b.readVarInt());
+            int id = b.readVarInt();
+            String d = b.readUtf(128);
+            if (d.contains("..") || d.contains("/") || d.contains("\\")) {
+                throw new IllegalArgumentException("bad dimension id");   // 拒绝路径穿越
+            }
+            int cx = b.readVarInt();
+            int cz = b.readVarInt();
+            int half = b.readVarInt();
+            if (half < 0 || half > 512) throw new IllegalArgumentException("bad half: " + half);
+            return new HeatmapC2S(id, d, cx, cz, half);
         }
 
         @Override
@@ -234,10 +265,17 @@ public final class Net {
         public final int regions;            // 条目数
         public final int[] rx, rz;           // region 坐标
         public final byte[][] bits;          // 每 region 128 字节位图
+        /** 拒绝原因（报告 P2-2）：空串 = 正常回包；客户端据此区分"被拒"和"真没区块"。 */
+        public final String reason;
 
         HeatmapS2C(int id, String d, int x, int z, int h, int[] rx, int[] rz, byte[][] bits) {
-            requestId = id; dim = d; cx = x; cz = z; half = h;
-            regions = rx.length; this.rx = rx; this.rz = rz; this.bits = bits;
+            this(id, d, x, z, h, rx, rz, bits, "");
+        }
+
+        HeatmapS2C(int id, String d, int x, int z, int h, int[] rx, int[] rz, byte[][] bits, String reason) {
+            requestId = id; dim = d; cx = x; cz = z; half = h; regions = rx.length;
+            this.rx = rx; this.rz = rz; this.bits = bits;
+            this.reason = reason == null ? "" : reason;
         }
 
         static void encode(FriendlyByteBuf b, HeatmapS2C m) {
@@ -248,21 +286,28 @@ public final class Net {
                 b.writeVarInt(m.rx[i]); b.writeVarInt(m.rz[i]);
                 b.writeBytes(m.bits[i]);
             }
+            b.writeUtf(m.reason);   // 追加在末尾：老客户端解析不到这字段也只是忽略
         }
 
         static HeatmapS2C decode(FriendlyByteBuf b) {
             int id = b.readVarInt();
             String d = b.readUtf(128);
             int x = b.readVarInt(), z = b.readVarInt(), h = b.readVarInt();
-            int n = Math.min(b.readVarInt(), 65536);
+            // 条目数必须是 0..65536 的合法值；负数（恶意/损坏包）直接拒绝，
+            // 否则 new int[n] 会抛 NegativeArraySizeException 崩掉客户端网络线程
+            int n = b.readVarInt();
+            if (n < 0 || n > 65536) throw new IllegalArgumentException("bad region count: " + n);
             int[] rx = new int[n], rz = new int[n];
             byte[][] bits = new byte[n][];
             for (int i = 0; i < n; i++) {
+                if (b.readableBytes() < 8) throw new IllegalArgumentException("truncated heatmap payload");
                 rx[i] = b.readVarInt(); rz[i] = b.readVarInt();
                 bits[i] = new byte[128];
+                if (b.readableBytes() < 128) throw new IllegalArgumentException("truncated bitmap");
                 b.readBytes(bits[i]);
             }
-            return new HeatmapS2C(id, d, x, z, h, rx, rz, bits);
+            String reason = b.isReadable() ? b.readUtf(64) : "";
+            return new HeatmapS2C(id, d, x, z, h, rx, rz, bits, reason);
         }
 
         @Override
@@ -276,27 +321,126 @@ public final class Net {
     // 服务端也会加载的公共类里——否则专用服务器验证 Net 时会去加载客户端类并以
     // “invalid dist DEDICATED_SERVER” 报错。
 
+    // ==================== 服务端扫描的安全护栏 ====================
+
+    /** 扫描用有界线程池：最多 2 个并发扫描 + 4 个排队，满了直接拒绝（而不是刷一个请求起一个线程）。 */
+    private static final ThreadPoolExecutor HEAT_EXECUTOR = new ThreadPoolExecutor(
+            1, 2, 30, TimeUnit.SECONDS, new LinkedBlockingQueue<>(4),
+            r -> {
+                Thread t = new Thread(r, "ChunksmithPanel-Heatmap");
+                t.setDaemon(true);
+                return t;
+            });
+
+    /** 每玩家上次请求时间：冷却 3 秒。 */
+    private static final ConcurrentHashMap<UUID, Long> HEAT_LAST_REQ = new ConcurrentHashMap<>();
+    private static final long HEAT_COOLDOWN_MS = 3000;
+    /** （报告 P2-1）冷却表兜底清理：条目过多时把早于 1 小时的先扔掉，玩家退出也不会漏驻留。 */
+    private static final long HEAT_REQ_EXPIRY_MS = 60 * 60_000L;
+
+    /**
+     * 拒绝原因在线上走的是<b>键名</b>而不是成品文案：服务端的语言设置和客户端不一定一样，
+     * 直接发中文等于把服务端的语言强加给客户端。客户端收到后用 {@link #reasonText} 查本地 lang。
+     * 键名带 mod id 前缀，和普通文本区分得开（老版本/上游发来的纯文本会原样显示）。
+     */
+    private static final char REASON_DETAIL_SEP = '\u0000';
+
+    private static String reasonKey(String key) {
+        return ChunkSmithGuiMod.MOD_ID + "." + key;
+    }
+
+    private static String reasonKey(String key, String detail) {
+        return reasonKey(key) + REASON_DETAIL_SEP + detail;
+    }
+
+    /** 拒绝包：空位图 + 可读原因（报告 P2-2）。 */
+    private static HeatmapS2C deny(HeatmapC2S m, String reason) {
+        return new HeatmapS2C(m.requestId, m.dim, m.cx, m.cz, m.half,
+                new int[0], new int[0], new byte[0][], reason);
+    }
+
     private static void handleHeatmap(HeatmapC2S m, IPayloadContext ctx) {
         if (!(ctx.player() instanceof ServerPlayer sp)) return;
-        MinecraftServer server = sp.getServer();
-        if (server == null) return;
-        // 文件 IO 放后台线程，别卡服务端 tick
-        Thread worker = new Thread(() -> {
-            try {
-                ScanResult r = scanRegions(server, m.dim, m.cx, m.cz, m.half);
-                if (sp.hasDisconnected() || sp.getServer() != server) return;
-                PacketDistributor.sendToPlayer(sp,
-                        new HeatmapS2C(m.requestId, m.dim, m.cx, m.cz, m.half, r.rx, r.rz, r.bits));
-            } catch (Throwable ignored) {
+        // 权限、冷却、发包都要碰服务端状态，统一回主线程做
+        ctx.enqueueWork(() -> {
+            MinecraftServer server = sp.getServer();
+            // 拒绝包：空位图 + 带原因（报告 P2-2），客户端能区分"被拒"和"这个范围真没区块"
+
+            // 权限：热力图暴露世界布局，至少要求一级 OP
+            if (server == null || !sp.createCommandSourceStack().hasPermission(1)) {
+                PacketDistributor.sendToPlayer(sp, deny(m, reasonKey("server.heatPerm")));
+                return;
             }
-        }, "ChunkSmithPanel-Heatmap");
-        worker.setDaemon(true);
-        worker.start();
+            // 维度必须真实存在（同时挡住任何路径拼接的尝试）
+            if (resolveLevel(server, m.dim) == null) {
+                PacketDistributor.sendToPlayer(sp, deny(m, reasonKey("server.heatNoDim")));
+                return;
+            }
+            // 每玩家冷却
+            long now = System.currentTimeMillis();
+            Long last = HEAT_LAST_REQ.get(sp.getUUID());
+            if (last != null && now - last < HEAT_COOLDOWN_MS) {
+                PacketDistributor.sendToPlayer(sp, deny(m, reasonKey("server.heatCooldown")));
+                return;
+            }
+            if (HEAT_LAST_REQ.size() > 256) {
+                long cutoff = now - HEAT_REQ_EXPIRY_MS;
+                HEAT_LAST_REQ.entrySet().removeIf(en -> en.getValue() < cutoff);
+            }
+            HEAT_LAST_REQ.put(sp.getUUID(), now);
+
+            final String dim = m.dim;
+            try {
+                HEAT_EXECUTOR.execute(() -> {
+                    HeatmapS2C reply;
+                    try {
+                        ScanResult r = scanRegions(server, dim, m.cx, m.cz, m.half);
+                        reply = new HeatmapS2C(m.requestId, dim, m.cx, m.cz, m.half, r.rx, r.rz, r.bits);
+                    } catch (Throwable t) {
+                        reply = deny(m, reasonKey("server.heatScanFailed", String.valueOf(t)));
+                    }
+                    // 回包切回服务端主线程发（扫描线程不碰连接状态）
+                    final HeatmapS2C payload = reply;
+                    server.execute(() -> {
+                        if (!sp.hasDisconnected()) PacketDistributor.sendToPlayer(sp, payload);
+                    });
+                });
+            } catch (RejectedExecutionException ex) {
+                // 队列已满：直接回带原因的拒绝包，避免积压
+                PacketDistributor.sendToPlayer(sp, deny(m, reasonKey("server.heatBusy")));
+            }
+        });
+    }
+
+    /** 在服务器真实维度里找 dim；找不到返回 null（拒绝任意字符串拼路径）。 */
+    private static ResourceKey<Level> resolveLevel(MinecraftServer server, String dim) {
+        if (dim == null) return null;
+        String want = dim.toLowerCase(Locale.ROOT);
+        for (ResourceKey<Level> k : server.levelKeys()) {
+            if (k.location().toString().toLowerCase(Locale.ROOT).equals(want)) return k;
+        }
+        return null;
+    }
+
+    /** 把线上收到的拒绝原因（键名 [+ 细节]）翻成当前语言的文案；不是键名的纯文本原样返回。 */
+    private static String reasonText(String raw) {
+        if (raw == null || raw.isEmpty()) return "";
+        String prefix = ChunkSmithGuiMod.MOD_ID + ".";
+        int sep = raw.indexOf(REASON_DETAIL_SEP);
+        String key = sep >= 0 ? raw.substring(0, sep) : raw;
+        if (!key.startsWith(prefix)) return raw;               // 老版本/上游发来的纯文本
+        String bare = key.substring(prefix.length());
+        return sep >= 0 ? Texts.t(bare, raw.substring(sep + 1)) : Texts.t(bare);
     }
 
     private static void handleHeatmapResp(HeatmapS2C m, IPayloadContext ctx) {
         ctx.enqueueWork(() -> {
             if (m.requestId != PanelState.heatRequestId) return;
+            // 被拒时给可读原因（报告 P2-2）：之前"权限不足/冷却/维度不存在"和
+            // "这块区域真没区块"都画成空图，用户完全分不清。
+            if (m.reason != null && !m.reason.isEmpty()) {
+                PanelState.log(PanelState.Level.WARN, Texts.t("log.heatDenied", reasonText(m.reason)));
+            }
             Set<Long> set = new HashSet<>();
             for (int i = 0; i < m.regions; i++) {
                 byte[] bits = m.bits[i];
@@ -311,7 +455,7 @@ public final class Net {
                     }
                 }
             }
-            PanelState.heat = new PanelState.HeatData(set, m.dim, 0, 0, m.half, false, System.currentTimeMillis());
+            PanelState.heat = new PanelState.HeatData(set, m.dim, m.half, System.currentTimeMillis());
         });
     }
 
@@ -333,14 +477,22 @@ public final class Net {
                     }
                 }
             }
-            return new PanelState.HeatData(set, dim, 0, 0, half, false, System.currentTimeMillis());
+            return new PanelState.HeatData(set, dim, half, System.currentTimeMillis());
         }
     }
 
-    /** 找到维度对应的存档目录，兼容 1.20 的 dimensions/ 路径和旧版回退路径。 */
+    /**
+     * 找到维度对应的存档目录，兼容 1.20 的 dimensions/ 路径和旧版回退路径。
+     *
+     * <p>dim 必须是 {@link #resolveLevel} 已经在服务端维度里验证过的字符串，
+     * 这里再兜底拒一次路径穿越字符，防止别处直接调用拼出越界路径。</p>
+     */
     static Path dimensionRoot(MinecraftServer server, String dim) {
-        Path root = server.getWorldPath(LevelResource.ROOT);
+        Path root = server.getWorldPath(LevelResource.ROOT).normalize();
         String d = dim == null ? "minecraft:overworld" : dim.toLowerCase(Locale.ROOT);
+        if (d.contains("..") || d.contains("/") || d.contains("\\")) {
+            return root;   // 宁可回主世界，也绝不拼接可疑路径
+        }
         if (d.equals("minecraft:overworld") || d.endsWith(":overworld")) return root;
         if (d.equals("minecraft:the_nether") || d.endsWith(":the_nether")) return root.resolve("DIM-1");
         if (d.equals("minecraft:the_end") || d.endsWith(":the_end")) return root.resolve("DIM1");
@@ -355,8 +507,9 @@ public final class Net {
     }
 
     static ScanResult scanRegions(MinecraftServer server, String dim, int cx, int cz, int half) {
-        Path dir = dimensionRoot(server, dim).resolve("region");
         half = Math.max(16, Math.min(half, 256)); // 钳制窗口：±256 区块以内，包体可控
+        Path dir = dimensionRoot(server, dim).resolve("region");
+        // 扫描上限兜底：即使窗口很大，也只扫有限个 region 文件
         int r0x = Math.floorDiv(cx - half, 32), r1x = Math.floorDiv(cx + half, 32);
         int r0z = Math.floorDiv(cz - half, 32), r1z = Math.floorDiv(cz + half, 32);
         List<Object[]> found = new ArrayList<>();

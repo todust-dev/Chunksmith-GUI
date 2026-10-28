@@ -3,7 +3,9 @@ package cn.blockforge.generated.chunksmithchunksmithgu.net;
 import cn.blockforge.generated.chunksmithchunksmithgu.PanelState;
 import cn.blockforge.generated.chunksmithchunksmithgu.Texts;
 import net.minecraft.client.Minecraft;
+import net.minecraft.network.Connection;
 import net.neoforged.neoforge.network.PacketDistributor;
+import net.neoforged.neoforge.network.registration.NetworkRegistry;
 
 /**
  * 客户端专用的网络入口：只有面板界面会调用这两个方法。
@@ -24,9 +26,26 @@ public final class NetClient {
     private NetClient() {
     }
 
-    /** 面板打开时向服务端问一次前置/世界信息（服务端没装模组则静默失败）。 */
+    /** 服务端连接上是否装了我们这条通道（ vanilla/未安装 时为 false）。 */
+    private static boolean serverHasChannel() {
+        try {
+            var listener = Minecraft.getInstance().getConnection();
+            if (listener == null) return false;
+            // NeoForge 的对应物：查这条连接协商出来的 payload 集合里有没有我们的握手包
+            // （protocol 传 null = 对所有阶段都查）
+            return NetworkRegistry.hasChannel(listener.getConnection(), null, Net.HandshakeC2S.TYPE.id());
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /** 面板打开时向服务端问一次前置/世界信息（服务端没装模组则静默跳过）。 */
     public static void requestHandshake() {
         try {
+            if (!serverHasChannel()) {
+                Net.serverWorlds = null;
+                return;
+            }
             PacketDistributor.sendToServer(Net.HandshakeC2S.INSTANCE);
         } catch (Throwable t) {
             Net.serverWorlds = null;
@@ -53,16 +72,23 @@ public final class NetClient {
                         PanelState.log(PanelState.Level.WARN, Texts.t("log.heatScanFailed", e));
                     }
                 }
-            }, "ChunkSmithPanel-Heatmap-SP");
+            }, "ChunksmithPanel-Heatmap-SP");
             t.setDaemon(true);
             t.start();
+            return;
+        }
+        // 多人：Forge 对未安装的通道不会抛异常，而是静默丢包 —— 必须主动探测，
+        // 否则面板会永远停在“请求中”。探测不到就直接给出可读提示。
+        if (!serverHasChannel()) {
+            PanelState.heatNoServer = true;
+            PanelState.log(PanelState.Level.WARN, Texts.t("log.noServerSide"));
             return;
         }
         try {
             PacketDistributor.sendToServer(new Net.HeatmapC2S(requestId, dim, cx, cz, half));
         } catch (Throwable t) {
             PanelState.heatNoServer = true;
-            PanelState.log(PanelState.Level.WARN, Texts.t("log.noServerSide"));
+            PanelState.log(PanelState.Level.WARN, Texts.t("log.heatSendFailed", t));
         }
     }
 }

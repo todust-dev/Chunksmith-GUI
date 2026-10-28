@@ -19,7 +19,6 @@ public abstract class Widget {
     public int x, y, w, h;
     public boolean visible = true;
     public boolean active = true;
-    public String tooltip;
 
     protected Widget(int x, int y, int w, int h) {
         this.x = x; this.y = y; this.w = w; this.h = h;
@@ -66,6 +65,7 @@ public abstract class Widget {
             }
             if (end >= text.length()) { out.add(text.substring(start)); break; }
             if (lastBreak > start + (end - start) / 2) end = lastBreak + 1;
+            if (end <= start) end = start + 1;   // 单字符比整行还宽时至少推进一个字符，防死循环
             out.add(text.substring(start, end));
             start = end;
         }
@@ -87,6 +87,12 @@ public abstract class Widget {
     public boolean charTyped(char ch, int mod) { return false; }
     public void setFocus(boolean f) { }
     public boolean wantsFocus() { return false; }
+    /**
+     * 是否真正处于编辑状态（报告 P1-3）。PanelScreen 用它判断挂着的 focus 是否已经"空转"：
+     * 输入框按完 Enter、文本区按 Esc 退出单行编辑后，控件自己已经不再接收输入，
+     * 但 PanelScreen.focus 还指着它——不清理的话后续所有按键都被吞掉，键盘像卡死一样。
+     */
+    public boolean isEditing() { return false; }
 
     // ==================== 按钮 ====================
 
@@ -102,8 +108,6 @@ public abstract class Widget {
             super(x, y, w, h);
             this.label = label;
         }
-
-        public Button stone() { this.stone = true; return this; }
 
         @Override
         public void render(GuiGraphics g, int mx, int my, float dt) {
@@ -168,20 +172,18 @@ public abstract class Widget {
             this(x, y, w, h, prefix, opts, null, initial);
         }
 
-        public void setOption(String v) {
-            int i = options.indexOf(v);
-            if (i >= 0 && i != index) { index = i; syncLabel(); }
-        }
-
         public String value() { return options.isEmpty() ? "" : options.get(index); }
 
         public void syncLabel() {
+            if (display.isEmpty()) { label = prefix + Texts.t("widget.cycle.suffix"); return; }
+            index = Math.max(0, Math.min(index, display.size() - 1));
             label = prefix + display.get(index) + Texts.t("widget.cycle.suffix");
         }
 
         @Override
         public boolean mouseClicked(double mx, double my, int button) {
             if (!contains(mx, my) || !active) return false;
+            if (options.isEmpty()) return true;   // 空选项列表：吞掉点击但不取模（会除零）
             if (button == 1) index = (index + options.size() - 1) % options.size();
             else if (button == 0) index = (index + 1) % options.size();
             else return false;
@@ -261,6 +263,7 @@ public abstract class Widget {
 
         @Override public boolean wantsFocus() { return active; }
         @Override public void setFocus(boolean f) { this.focused = f; }
+        @Override public boolean isEditing() { return focused; }
 
         @Override
         public void render(GuiGraphics g, int mx, int my, float dt) {
@@ -277,12 +280,15 @@ public abstract class Widget {
                 offset = Math.max(0, Math.min(cw - (w - 10), tw - (w - 8)));
             }
             clipOn(g, x + 2, y + 2, x + w - 2, y + h - 2);
-            g.drawString(font, shown, x + 4 - offset, y + (h - 8) / 2, active ? Theme.TEXT_LIGHT : Theme.BTN_TEXT_OFF, false);
-            if (focused && blink) {
-                int cx = x + 4 - offset + font.width(shown.substring(0, Math.min(caret, shown.length())));
-                g.fill(cx, y + 3, cx + 1, y + h - 3, Theme.GOLD);
+            try {
+                g.drawString(font, shown, x + 4 - offset, y + (h - 8) / 2, active ? Theme.TEXT_LIGHT : Theme.BTN_TEXT_OFF, false);
+                if (focused && blink) {
+                    int cx = x + 4 - offset + font.width(shown.substring(0, Math.min(caret, shown.length())));
+                    g.fill(cx, y + 3, cx + 1, y + h - 3, Theme.GOLD);
+                }
+            } finally {
+                g.disableScissor();
             }
-            g.disableScissor();
         }
 
         @Override
@@ -318,8 +324,11 @@ public abstract class Widget {
                 case 262: caret = Math.min(value.length(), caret + 1); return true; // right
                 case 268: caret = 0; return true;                        // home
                 case 269: caret = value.length(); return true;           // end
-                case 257:                                                  // enter
-                    focused = false; onChanged.run(); return true;
+                case 257:                                                 // enter：提交但保留焦点
+                    // （报告 P1-3）之前在这里把 focused 置 false，PanelScreen.focus 却还指着本框：
+                    // 之后所有按键都被上层"聚焦时一律吞掉"的规则吃掉，直到再按一次 Esc。
+                    // 现在 Enter 只做提交，光标留在框里，继续打字不丢。关焦点交给 Esc/点击别处。
+                    onChanged.run(); return true;
                 default:
                     return false;
             }
@@ -371,6 +380,7 @@ public abstract class Widget {
 
         @Override public boolean wantsFocus() { return active; }
         @Override public void setFocus(boolean f) { if (!f) editLine = -1; }
+        @Override public boolean isEditing() { return editLine >= 0; }
 
         @Override
         public void render(GuiGraphics g, int mx, int my, float dt) {
@@ -380,6 +390,7 @@ public abstract class Widget {
             int visible = Math.max(1, (h - 6) / lh);
             scroll = Math.max(0, Math.min(scroll, lines.size() - visible));
             clipOn(g, x + 2, y + 2, x + w - 2, y + h - 2);
+            try {
             for (int i = 0; i < visible && i + scroll < lines.size(); i++) {
                 int idx = i + scroll;
                 String line = lines.get(idx);
@@ -395,7 +406,9 @@ public abstract class Widget {
                     g.fill(cx, ty, cx + 1, ty + 9, Theme.GOLD);
                 }
             }
-            g.disableScissor();
+            } finally {
+                g.disableScissor();
+            }
             drawScrollbar(g, visible);
         }
 
@@ -531,18 +544,21 @@ public abstract class Widget {
             lastVisible = maxRows;
             clampScroll();
             clipOn(g, x + 2, y + 2, x + w - 2, y + h - 2);
-            // 长行先折成多行再画，画不满就停——文字既不会溢出框，也不会被切掉半截
-            int innerW = Math.max(16, w - 12);
-            int row = 0;
-            for (int i = scroll; i < lines.size() && row < maxRows; i++) {
-                Line ln = lines.get(i);
-                for (String seg : wrap(font, ln.text, innerW)) {
-                    if (row >= maxRows) break;
-                    g.drawString(font, seg, x + 6, y + 4 + row * lh, ln.color, false);
-                    row++;
+            try {
+                // 长行先折成多行再画，画不满就停——文字既不会溢出框，也不会被切掉半截
+                int innerW = Math.max(16, w - 12);
+                int row = 0;
+                for (int i = scroll; i < lines.size() && row < maxRows; i++) {
+                    Line ln = lines.get(i);
+                    for (String seg : wrap(font, ln.text, innerW)) {
+                        if (row >= maxRows) break;
+                        g.drawString(font, seg, x + 6, y + 4 + row * lh, ln.color, false);
+                        row++;
+                    }
                 }
+            } finally {
+                g.disableScissor();
             }
-            g.disableScissor();
             if (lines.size() > maxRows) {
                 int barH = Math.max(8, h * maxRows / lines.size());
                 int barY = y + (int) ((h - barH) * (scroll / (double) Math.max(1, lines.size() - maxRows)));
@@ -577,32 +593,9 @@ public abstract class Widget {
         public void render(GuiGraphics g, int mx, int my, float dt) {
             Font f = Minecraft.getInstance().font;
             int c = colorOverride != 0 ? colorOverride : (big ? Theme.INK : Theme.LABEL);
-            g.drawString(f, text, x, y, c, true);
-        }
-    }
-
-    /** 绿色分段进度条。frac < 0 = 未知（流水灯）。 */
-    public static class Bar extends Widget {
-        public double frac;
-        public int color = Theme.GREEN;
-
-        public Bar(int x, int y, int w, int h) {
-            super(x, y, w, h);
-        }
-
-        @Override
-        public void render(GuiGraphics g, int mx, int my, float dt) {
-            Theme.slot(g, x, y, w, h);
-            if (frac >= 0) {
-                int fw = (int) ((w - 2) * Math.min(1.0, Math.max(0.0, frac)));
-                if (fw > 0) Theme.barFill(g, x + 1, y + 1, fw, h - 2, color);
-            } else {
-                long t = System.currentTimeMillis() / 40;
-                for (int i = 0; i < w - 2; i += 8) {
-                    int cx = (int) ((t + i) % (w + 24)) - 24;
-                    if (cx > 0 && cx < w - 8) g.fill(x + 1 + cx, y + 2, x + 5 + cx, y + h - 2, 0x6667C23A);
-                }
-            }
+            // 关掉字体阴影：面板按非整数倍整体缩放，1px 的影子会被放大成看得见的“第二层字”，
+            // 中文笔画本来就密，重影一叠特别刺眼（用户反馈图 2 的图例文字）。
+            g.drawString(f, text, x, y, c, false);
         }
     }
 
@@ -625,9 +618,9 @@ public abstract class Widget {
             Font f = Minecraft.getInstance().font;
             Theme.card(g, x, y, w, h);
             if (icon != null) Icons.draw(g, icon, x + 8, y + 8, Icons.LARGE_SIZE, 0xFFFFFFFF);
-            g.drawString(f, title, x + 30, y + 6, Theme.INK, true);
+            g.drawString(f, title, x + 30, y + 6, Theme.INK, false);
             String v = valueText == null ? "" : valueText.get();
-            g.drawString(f, v, x + w - 10 - f.width(v), y + 6, valueColor, true);
+            g.drawString(f, v, x + w - 10 - f.width(v), y + 6, valueColor, false);
             int bx = x + 30, bw = w - 40;
             int by = y + h - 14;
             double fr = frac == null ? -1 : frac.getAsDouble();
@@ -708,13 +701,25 @@ public abstract class Widget {
         }
     }
 
-    /** 热力图画布：区块存在 = 绿点；图案范围 = 金色半透覆盖；刷新位图缓存。 */
+    /**
+     * 热力图画布：区块存在 = 绿点；图案范围 = 金色半透覆盖；刷新位图缓存。
+     *
+     * 性能策略（报告 P0-9）：
+     *  - 位图缓存 key 用“量化后的中心”而不是原始中心：玩家小幅移动只平移旧缓存，
+     *    跨过量化网格才重建，不再每帧做几万次 HashSet 查询；
+     *  - 缓存分辨率上限 128；
+     *  - 绘制时把相邻同色缓存格合并成一条横向矩形，fill 调用降一个数量级；
+     *  - 所有填充裁剪进画布矩形，平移期间不会画到框外。
+     */
     public static class HeatCanvas extends Widget {
         public int half = 128;
         public double scx, scz;          // 图案中心（区块）
-        private int[][] cache;           // 每行像素颜色，null=空
+        private int[][] cache;           // 每格颜色，null=空
         private int cacheHalf = -1;
         private long cacheKey = -1;
+        private double cacheQcx, cacheQcz;   // 缓存锚定的量化中心
+        private int cacheStep = 1;           // 一格 = 多少区块
+        private int cacheQuant = 4;          // 中心量化步长（区块）
 
         public HeatCanvas(int x, int y, int w, int h) {
             super(x, y, w, h);
@@ -731,19 +736,32 @@ public abstract class Widget {
                 g.drawString(f, s, x + w / 2 - f.width(s) / 2, y + h / 2 - 4, Theme.BTN_TEXT_OFF, false);
                 return;
             }
-            rebuild(heat);
             int size = Math.min(w - 4, h - 4);
             int cx0 = x + (w - size) / 2, cy0 = y + (h - size) / 2;
-            int n = cache.length;
+            int n = rebuild(heat);
+            if (n <= 0) return;
             float cell = size / (float) n;
+            // 当前中心相对缓存锚点的偏移（换成缓存格单位）；缓存四周留了一个量化步的余量
+            double oxCh = (scx - cacheQcx + cacheQuant / 2.0) / Math.max(1, cacheStep);
+            double ozCh = (scz - cacheQcz + cacheQuant / 2.0) / Math.max(1, cacheStep);
             for (int r = 0; r < n; r++) {
                 int[] row = cache[r];
                 if (row == null) continue;
-                for (int cIdx = 0; cIdx < row.length; cIdx++) {
-                    int col = row[cIdx];
-                    if (col == 0) continue;
-                    int px = cx0 + (int) (cIdx * cell), py = cy0 + (int) (r * cell);
-                    g.fill(px, py, px + (int) Math.max(1, cell), py + (int) Math.max(1, cell), col);
+                int py0 = cy0 + (int) Math.floor((r - ozCh) * cell);
+                int py1 = Math.max(py0 + 1, cy0 + (int) Math.ceil((r + 1 - ozCh) * cell));
+                if (py1 <= cy0 || py0 >= cy0 + size) continue;
+                py0 = Math.max(py0, cy0); py1 = Math.min(py1, cy0 + size);
+                int c = 0;
+                while (c < n) {
+                    int col = row[c];
+                    if (col == 0) { c++; continue; }
+                    int runEnd = c + 1;
+                    while (runEnd < n && row[runEnd] == col) runEnd++;
+                    int px0 = cx0 + (int) Math.floor((c - oxCh) * cell);
+                    int px1 = Math.max(px0 + 1, cx0 + (int) Math.ceil((runEnd - oxCh) * cell));
+                    px0 = Math.max(px0, cx0); px1 = Math.min(px1, cx0 + size);
+                    if (px0 < px1) g.fill(px0, py0, px1, py1, col);
+                    c = runEnd;
                 }
             }
             // 玩家位置十字
@@ -754,27 +772,39 @@ public abstract class Widget {
             g.drawString(f, info, x + 4, y + h - 12, Theme.TEXT_LIGHT, false);
         }
 
-        private long visualKey(cn.blockforge.generated.chunksmithchunksmithgu.PanelState.HeatData heat) {
+        private long visualKey(cn.blockforge.generated.chunksmithchunksmithgu.PanelState.HeatData heat,
+                               double qcx, double qcz) {
             long key = heat.receivedMs;
-            key = 31 * key + Double.doubleToLongBits(scx);
-            key = 31 * key + Double.doubleToLongBits(scz);
+            key = 31 * key + Double.doubleToLongBits(qcx);
+            key = 31 * key + Double.doubleToLongBits(qcz);
             key = 31 * key + cn.blockforge.generated.chunksmithchunksmithgu.PanelState.shape.hashCode();
             key = 31 * key + cn.blockforge.generated.chunksmithchunksmithgu.PanelState.radius;
             key = 31 * key + cn.blockforge.generated.chunksmithchunksmithgu.PanelState.radius2;
             return key;
         }
 
-        private void rebuild(cn.blockforge.generated.chunksmithchunksmithgu.PanelState.HeatData heat) {
-            long key = visualKey(heat);
-            if (cache != null && cacheHalf == half && cacheKey == key) return;
-            int span = 2 * half + 1;
-            int n = Math.min(span, 224);           // 位图分辨率上限，防卡
-            int step = (span + n - 1) / n;
+        /** 需要就重建缓存；返回缓存边长（0 = 无缓存）。 */
+        private int rebuild(cn.blockforge.generated.chunksmithchunksmithgu.PanelState.HeatData heat) {
+            // 量化步长按窗口大小自适应：小窗口（±16）用 2 区块网格，大窗口（±256）用 8；
+            // 图案叠加最多偏移半个步长，窗口越大相对误差越小
+            int quant = Math.max(2, Math.min(8, half / 16 * 2));
+            double qcx = Math.round(scx / (double) quant) * quant;
+            double qcz = Math.round(scz / (double) quant) * quant;
+            long key = visualKey(heat, qcx, qcz);
+            if (cache != null && cacheHalf == half && cacheKey == key && cacheQuant == quant) return cache.length;
+            int margin = quant;                     // 缓存四周多出的区块余量（= 一个步长，两侧各半）
+            int span = 2 * half + 1 + margin;
+            int n = Math.min(span, 128);            // 位图分辨率上限（报告建议值）
+            int step = Math.max(1, (span + n - 1) / n);
             n = (span + step - 1) / step;
             cache = new int[n][n];
             cacheHalf = half;
             cacheKey = key;
-            int minC = (int) scx - half, minR = (int) scz - half;
+            cacheQcx = qcx;
+            cacheQcz = qcz;
+            cacheStep = step;
+            cacheQuant = quant;
+            int minC = (int) qcx - half - margin / 2, minR = (int) qcz - half - margin / 2;
             String shape = cn.blockforge.generated.chunksmithchunksmithgu.PanelState.shape;
             int r1 = cn.blockforge.generated.chunksmithchunksmithgu.PanelState.radius;
             int r2 = cn.blockforge.generated.chunksmithchunksmithgu.PanelState.radius2;
@@ -790,13 +820,14 @@ public abstract class Widget {
                             }
                         }
                     }
-                    boolean inShape = PatternMath.inShape(shape, wx, wz, scx, scz, r1, r2);
+                    boolean inShape = PatternMath.inShape(shape, wx, wz, qcx, qcz, r1, r2);
                     int col = 0;
                     if (exists) col = inShape ? 0xFF7BC950 : 0x66A9A48B;
                     else if (inShape) col = 0x33E3A72F;
                     if (col != 0) cache[gz / step][gx / step] = col;
                 }
             }
+            return n;
         }
     }
 }

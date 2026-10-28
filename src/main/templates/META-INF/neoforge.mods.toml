@@ -10,6 +10,9 @@ displayName="${mod_name}"
 authors="${mod_authors}"
 displayURL="https://github.com/BarryAlen777/Chunksmith_modern_gui"
 logoFile="logo.png"
+# 面板是可选网络功能：服务端没装本模组时通道缺席而不是拒握手，
+# 服务器列表也不按本模组的版本匹配拦人
+displayTest="IGNORE_ALL_VERSION"
 description='''Chunksmith modern gui —— 为 Chunksmith 前置模组提供现代化图形面板。
 
 作者：BarryAlen777
@@ -27,4 +30,12 @@ modId="minecraft"
 type="required"
 versionRange="${minecraft_version_range}"
 ordering="NONE"
+side="BOTH"
+# 前置 Chunksmith 声明为可选依赖：没装时面板照样能开并明确提示，
+# 装了则排在它后面加载，命令树探测更早生效
+[[dependencies.${mod_id}]]
+modId="chunksmith"
+type="optional"
+versionRange="[0,)"
+ordering="AFTER"
 side="BOTH"

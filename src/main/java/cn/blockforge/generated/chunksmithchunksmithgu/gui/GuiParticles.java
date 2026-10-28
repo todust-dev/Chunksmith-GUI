@@ -18,6 +18,8 @@ public final class GuiParticles {
 
     private static final List<P> LIST = new ArrayList<>();
     private static long lastEdgeSpawn = 0;
+    /** 共用一个随机源，别每次 spawn 都 new Random()。 */
+    private static final java.util.Random RND = new java.util.Random();
 
     /** 每帧调用；running 决定是否沿边缘持续冒粒子。 */
     public static void tickRender(GuiGraphics g, int px, int py, int pw, int ph, boolean running, long now) {
@@ -38,7 +40,7 @@ public final class GuiParticles {
     }
 
     private static void spawnEdge(int px, int py, int pw, int ph) {
-        java.util.Random r = new java.util.Random();
+        java.util.Random r = RND;
         for (int i = 0; i < 2; i++) {
             P p = new P();
             boolean left = r.nextBoolean();
@@ -55,7 +57,7 @@ public final class GuiParticles {
 
     /** 完成爆闪：沿四边撒一圈金色粒子。 */
     public static void burst(int px, int py, int pw, int ph) {
-        java.util.Random r = new java.util.Random();
+        java.util.Random r = RND;
         for (int i = 0; i < 60; i++) {
             P p = new P();
             double side = r.nextInt(4);
