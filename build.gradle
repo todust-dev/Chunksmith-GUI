@@ -1,5 +1,5 @@
 plugins { id 'java'; id 'net.minecraftforge.gradle' version '[6.0,6.2)' }
-version = '1.2.0-r30'
+version = '1.2.0-r32'
 group = 'cn.blockforge.generated.chunksmithchunksmithgu'
 base { archivesName = 'chunksmith_modern_gui' }
 java.toolchain.languageVersion = JavaLanguageVersion.of(17)

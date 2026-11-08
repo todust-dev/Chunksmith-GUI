@@ -4,6 +4,7 @@ import cn.blockforge.generated.chunksmithchunksmithgu.ChunkSmithGuiMod;
 import cn.blockforge.generated.chunksmithchunksmithgu.ChunkSmithGuiPaths;
 import cn.blockforge.generated.chunksmithchunksmithgu.CommandBuilder;
 import cn.blockforge.generated.chunksmithchunksmithgu.CommandRunner;
+import cn.blockforge.generated.chunksmithchunksmithgu.Lang;
 import cn.blockforge.generated.chunksmithchunksmithgu.PanelState;
 import cn.blockforge.generated.chunksmithchunksmithgu.PrereqStatus;
 import cn.blockforge.generated.chunksmithchunksmithgu.Settings;
@@ -133,7 +134,7 @@ public class PanelScreen extends Screen {
     private static final java.text.SimpleDateFormat HHMMSS = new java.text.SimpleDateFormat("HH:mm:ss");
 
     public PanelScreen() {
-        super(Component.literal(ChunkSmithGuiMod.MOD_NAME + " 指令面板"));
+        super(Component.literal(ChunkSmithGuiMod.MOD_NAME + " " + Lang.t("指令面板")));
     }
 
     @Override
@@ -314,7 +315,15 @@ public class PanelScreen extends Screen {
             s = "注意：已开启“跳过安全预检” · " + s;
             color = Theme.DANGER;
         }
-        g.drawString(f, s, 24, 62, color, false);
+        g.drawString(f, fits(f, Lang.t(s), VW - 48), 24, 62, color, false);
+    }
+
+    /** 一行放不下就截断加省略号（英文文案比中文长，长句会顶到面板外面去）。 */
+    private static String fits(Font f, String s, int maxW) {
+        if (s == null || f.width(s) <= maxW) return s;
+        String cut = s;
+        while (cut.length() > 4 && f.width(cut + "…") > maxW) cut = cut.substring(0, cut.length() - 1);
+        return cut + "…";
     }
 
     /** 底栏右侧的实时信息 + 缩放说明。 */
@@ -333,7 +342,7 @@ public class PanelScreen extends Screen {
         long usedMb = (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) / (1024L * 1024L);
         // FPS/内存文本放在缩放信息文本（约到 x=350）之后、按钮组（x=528）之前，大缩放下也不重叠
         g.drawString(f, "FPS " + mc.getFps(), 392, by + 4, Theme.INK_SOFT, false);
-        g.drawString(f, "内存 " + usedMb + "MB", 448, by + 4, Theme.INK_SOFT, false);
+        g.drawString(f, Lang.t("内存") + " " + usedMb + "MB", 448, by + 4, Theme.INK_SOFT, false);
     }
 
     private void drawToast(GuiGraphics g, long now) {
@@ -343,11 +352,20 @@ public class PanelScreen extends Screen {
         int alpha = (int) (210 * Math.min(1.0, (toastUntil - now) / 600.0));
         alpha = Math.max(50, alpha);
         int bg = (alpha << 24) | 0x2E1C0E;
-        int w = f.width(toastMsg) + 18;
-        int x = (VW - w) / 2, y = VH - 58;
-        g.fill(x, y, x + w, y + 18, bg);
-        Theme.stroke(g, x, y, x + w, y + 18, Theme.GOLD);
-        g.drawString(f, toastMsg, x + 9, y + 5, 0xFFF7ECD2, false);
+        String msg = Lang.t(toastMsg);
+        // 英文比中文长一大截，一句话常常比面板还宽；超宽就折行，别画到面板外面去
+        List<String> rows = Widget.wrap(f, msg, VW - 90);
+        int lineH = 11;
+        int tw = 0;
+        for (String r : rows) tw = Math.max(tw, f.width(r));
+        int w = tw + 18;
+        int h = rows.size() * lineH + 8;
+        int x = (VW - w) / 2, y = VH - 58 - (h - 18);
+        g.fill(x, y, x + w, y + h, bg);
+        Theme.stroke(g, x, y, x + w, y + h, Theme.GOLD);
+        for (int i = 0; i < rows.size(); i++) {
+            g.drawString(f, rows.get(i), x + 9, y + 5 + i * lineH, 0xFFF7ECD2, false);
+        }
     }
 
     private void toast(String msg) {
@@ -509,10 +527,10 @@ public class PanelScreen extends Screen {
         chrome.add(iconHint(bx + 84, "下一页"));
     }
 
-    /** 图标键下方的一行中文说明（居中，画在底部木框上）。 */
+    /** 图标键下方的一行说明（居中，画在底部木框上）。宽度按翻译后的字算，切语言也不会偏。 */
     private Widget.Label iconHint(int btnX, String text) {
         Font f = Minecraft.getInstance().font;
-        Widget.Label lb = new Widget.Label(btnX + (24 - f.width(text)) / 2, VH - 12, text, false);
+        Widget.Label lb = new Widget.Label(btnX + (24 - f.width(Lang.t(text))) / 2, VH - 12, text, false);
         lb.colorOverride = 0xFFF0D9AE;
         return lb;
     }
@@ -551,7 +569,7 @@ public class PanelScreen extends Screen {
             boolean sel = PanelScreen.this.tab == target;
             Theme.buttonFace(g, x, y, w, h, contains(mx, my), sel, true, false);
             Font f = Minecraft.getInstance().font;
-            g.drawString(f, text, x + (w - f.width(text)) / 2, y + (h - 8) / 2, sel ? Theme.INK : Theme.LABEL, false);
+            g.drawString(f, Lang.t(text), x + (w - f.width(Lang.t(text))) / 2, y + (h - 8) / 2, sel ? Theme.INK : Theme.LABEL, false);
             if (sel) g.fill(x + 3, y + h - 2, x + w - 3, y + h - 1, Theme.GOLD);
         }
 
@@ -859,6 +877,8 @@ public class PanelScreen extends Screen {
 
         widgets.add(new Widget.Label(x0, 240, "最近状态与异常", false));
         taskStatus = new Widget.ScrollText(x0, 252, cw, 110);
+        // 任务页这几行是面板自己写的状态文案，跟着面板语言走（日志页不翻，那里是服务端原话）
+        taskStatus.translate = true;
         widgets.add(taskStatus);
 
         int bx = 416, bw = 216;
@@ -1084,16 +1104,18 @@ public class PanelScreen extends Screen {
     private void rebuildTrimPreview() {
         if (trimTa == null) return;
         List<Widget.Line> out = new ArrayList<>();
-        out.add(new Widget.Line("# 第一阶段：设好范围（3 秒未被拒绝才进第二阶段）", Theme.BTN_TEXT_OFF));
+        // 这个框里既有指令原文（不能动），也有面板自己写的分隔说明（要跟着语言翻），
+        // 所以说明行在生成时就翻好，框本身保持“不翻译”。
+        out.add(new Widget.Line(Lang.t("# 第一阶段：设好范围（3 秒未被拒绝才进第二阶段）"), Theme.BTN_TEXT_OFF));
         for (String s : CommandBuilder.buildTrimSelection()) out.add(new Widget.Line("/ " + s, 0xFFE8D9AE));
-        out.add(new Widget.Line("# 第二阶段：服务端未报错才自动补发", Theme.BTN_TEXT_OFF));
+        out.add(new Widget.Line(Lang.t("# 第二阶段：服务端未报错才自动补发"), Theme.BTN_TEXT_OFF));
         out.add(new Widget.Line("/ " + CommandBuilder.trimCommand(), Theme.DANGER));
-        String radiusText = "保留半径 " + PanelState.radius;
+        String radiusText = Lang.t("保留半径") + " " + PanelState.radius;
         if (CommandBuilder.shapeHasRadius2(PanelState.shape) && PanelState.radius2 > 0) {
-            radiusText = "保留半径 " + PanelState.radius + "/" + PanelState.radius2;
+            radiusText = Lang.t("保留半径") + " " + PanelState.radius + "/" + PanelState.radius2;
         }
-        out.add(new Widget.Line("# 形状 " + PanelState.shape + " · 中心 " + PanelState.centerMode
-                + " · " + radiusText, Theme.BTN_TEXT_OFF));
+        out.add(new Widget.Line(Lang.t("# 形状") + " " + PanelState.shape + " " + Lang.t("· 中心") + " "
+                + PanelState.centerMode + " · " + radiusText, Theme.BTN_TEXT_OFF));
         trimTa.setLines(out);
     }
 
@@ -1256,28 +1278,46 @@ public class PanelScreen extends Screen {
         int x0 = 28, w0 = 280;
         widgets.add(new Widget.Label(x0, 76, "面板选项", true));
 
-        Widget.Toggle particles = new Widget.Toggle(x0, 94, w0, 16, "运行粒子", Settings.particles);
+        // ---- 面板语言：中文 / English ----
+        // 选项名故意不进翻译表，所以中文界面显示「中文」、英文界面也显示「中文」，
+        // 是语言选择器该有的样子（自己翻自己就没法选了）。
+        Widget.Cycle langCy = new Widget.Cycle(x0, 94, w0, 16, "面板语言  ",
+                java.util.List.of(Lang.ZH, Lang.EN),
+                java.util.List.of("中文", "English"),
+                Lang.english() ? 1 : 0);
+        langCy.onChange = i -> {
+            Settings.language = i == 1 ? Lang.EN : Lang.ZH;
+            Settings.languageChosen = true;
+            Settings.save();
+            Lang.invalidate();      // 缓存里全是旧语言的结果，必须清
+            buildChrome();          // 底栏、标签条的文字也要跟着换
+            buildTab();
+            toast("面板语言已切换");
+        };
+        widgets.add(langCy);
+
+        Widget.Toggle particles = new Widget.Toggle(x0, 114, w0, 16, "运行粒子", Settings.particles);
         particles.onChange = b -> { Settings.particles = b; Settings.save(); };
         widgets.add(particles);
-        Widget.Toggle sounds = new Widget.Toggle(x0, 116, w0, 16, "完成提示音", Settings.sounds);
+        Widget.Toggle sounds = new Widget.Toggle(x0, 134, w0, 16, "完成提示音", Settings.sounds);
         sounds.onChange = b -> { Settings.sounds = b; Settings.save(); };
         widgets.add(sounds);
-        Widget.Toggle deco = new Widget.Toggle(x0, 138, w0, 16, "藤蔓角饰", Settings.decorations);
+        Widget.Toggle deco = new Widget.Toggle(x0, 154, w0, 16, "藤蔓角饰", Settings.decorations);
         deco.onChange = b -> { Settings.decorations = b; Settings.save(); };
         widgets.add(deco);
 
-        widgets.add(new Widget.Label(x0, 164, "进度自动刷新（秒，0 = 关）", false));
-        Widget.Slider refresh = new Widget.Slider(x0, 176, 190, 16, 0, 60, Settings.progressRefreshSec, 1);
+        widgets.add(new Widget.Label(x0, 176, "进度自动刷新（秒，0 = 关）", false));
+        Widget.Slider refresh = new Widget.Slider(x0, 188, 190, 16, 0, 60, Settings.progressRefreshSec, 1);
         refresh.onChange = v -> { Settings.progressRefreshSec = v; Settings.save(); };
         widgets.add(refresh);
-        refreshLb = new Widget.Label(x0 + 198, 180, "", false);
+        refreshLb = new Widget.Label(x0 + 198, 192, "", false);
         widgets.add(refreshLb);
 
-        widgets.add(new Widget.Label(x0, 202, "热力图默认窗口（区块）", false));
-        Widget.Slider heatR = new Widget.Slider(x0, 214, 190, 16, 16, 256, Settings.heatmapRadius, 16);
+        widgets.add(new Widget.Label(x0, 210, "热力图默认窗口（区块）", false));
+        Widget.Slider heatR = new Widget.Slider(x0, 222, 190, 16, 16, 256, Settings.heatmapRadius, 16);
         heatR.onChange = v -> { Settings.heatmapRadius = v; Settings.save(); };
         widgets.add(heatR);
-        heatRadiusLb = new Widget.Label(x0 + 198, 218, "", false);
+        heatRadiusLb = new Widget.Label(x0 + 198, 226, "", false);
         widgets.add(heatRadiusLb);
 
         Widget.Button save = new Widget.Button(x0, 244, 132, 20, "保存设置");
@@ -1453,8 +1493,13 @@ public class PanelScreen extends Screen {
         out.add(new Widget.Line("已耗时：" + (idle ? "--" : Theme.fmtDuration(PanelState.elapsedNow())), Theme.TEXT_LIGHT));
         out.add(new Widget.Line("预计剩余：" + (idle ? "--" : Theme.fmtDuration(PanelState.etaMs)), Theme.TEXT_LIGHT));
         // 当前任务计数与会话累计分开：清掉任务后不再显示“异常 N 条”的旧账（报告 P1-18）
-        out.add(new Widget.Line("异常 " + PanelState.errors + " 条 · 警告 " + PanelState.warnings + " 条"
-                        + "（本次会话累计 " + PanelState.sessionErrors + "/" + PanelState.sessionWarnings + "）",
+        // 这句量词多，英语没有“条”这种量词，整句按语言各写一份，别靠词条拼
+        String counts = Lang.english()
+                ? "Errors " + PanelState.errors + " · warnings " + PanelState.warnings
+                        + " (session total " + PanelState.sessionErrors + "/" + PanelState.sessionWarnings + ")"
+                : "异常 " + PanelState.errors + " 条 · 警告 " + PanelState.warnings + " 条"
+                        + "（本次会话累计 " + PanelState.sessionErrors + "/" + PanelState.sessionWarnings + "）";
+        out.add(new Widget.Line(counts,
                 PanelState.errors > 0 ? 0xFFFF7A66 : Theme.TEXT_LIGHT));
         out.add(new Widget.Line("原始回包：" + (PanelState.taskRawStatus == null || PanelState.taskRawStatus.isBlank()
                 ? "（还没收到）" : PanelState.taskRawStatus), Theme.BTN_TEXT_OFF));

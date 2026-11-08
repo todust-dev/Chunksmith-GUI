@@ -1,5 +1,6 @@
 package cn.blockforge.generated.chunksmithchunksmithgu.gui;
 
+import cn.blockforge.generated.chunksmithchunksmithgu.Lang;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -108,14 +109,23 @@ public abstract class Widget {
             this.label = label;
         }
 
+        /**
+         * 真正画出来的那串字。基类直接翻译 {@link #label}；
+         * 子类（开关、循环按钮）要自己拼状态字，就重写这里，避开片段替换。
+         */
+        protected String displayText() {
+            return Lang.t(label);
+        }
+
         @Override
         public void render(GuiGraphics g, int mx, int my, float dt) {
             boolean hov = contains(mx, my) && active;
             boolean down = System.currentTimeMillis() < pressUntil;
             Theme.buttonFace(g, x, y, w, h, hov, down, active, stone);
             Font fnt = Minecraft.getInstance().font;
+            String text = displayText();
             int iconW = iconPath != null ? 11 : 0;
-            int total = iconW + (iconW > 0 ? 4 : 0) + fnt.width(label);
+            int total = iconW + (iconW > 0 ? 4 : 0) + fnt.width(text);
             int tx = x + (w - total) / 2;
             int ty = y + (h - 8) / 2 + (down ? 1 : 0);
             if (iconPath != null) {
@@ -123,7 +133,7 @@ public abstract class Widget {
                         active ? (stone ? Theme.STONE_BTN_TX : Theme.BTN_TEXT) : Theme.BTN_TEXT_OFF);
             }
             int c = !active ? Theme.BTN_TEXT_OFF : (stone ? Theme.STONE_BTN_TX : textColor);
-            g.drawString(fnt, label, tx + iconW + (iconW > 0 ? 4 : 0), ty, c, false);
+            g.drawString(fnt, text, tx + iconW + (iconW > 0 ? 4 : 0), ty, c, false);
         }
 
         @Override
@@ -176,6 +186,14 @@ public abstract class Widget {
             label = prefix + display.get(index) + "  >";
         }
 
+        /** 前缀和选项各自翻译，再拼起来画（整串走片段替换容易把选项名切碎）。 */
+        @Override
+        protected String displayText() {
+            if (display.isEmpty()) return Lang.t(prefix) + "  >";
+            int i = Math.max(0, Math.min(index, display.size() - 1));
+            return Lang.t(prefix) + Lang.t(display.get(i)) + "  >";
+        }
+
         @Override
         public boolean mouseClicked(double mx, double my, int button) {
             if (!contains(mx, my) || !active) return false;
@@ -206,6 +224,13 @@ public abstract class Widget {
         public void syncLabel() {
             label = name + (on ? "  开" : "  关");
             textColor = on ? Theme.OK : Theme.INK_SOFT;
+        }
+
+        /** 名字按语言翻，开/关跟着语言走（中文 开/关，英文 ON/OFF）。 */
+        @Override
+        protected String displayText() {
+            boolean en = Lang.english();
+            return Lang.t(name) + "  " + (on ? (en ? "ON" : "开") : (en ? "OFF" : "关"));
         }
 
         @Override
@@ -512,6 +537,11 @@ public abstract class Widget {
 
     public static class ScrollText extends Widget {
         public List<Line> lines = new ArrayList<>();
+        /**
+         * 是否按面板语言翻译每行。任务页的状态行要翻（那是面板自己写的）；
+         * 日志页不翻——里面是服务端的原话和指令，翻了就成了“译制版日志”。
+         */
+        public boolean translate = false;
         private int scroll;
         private int lastVisible;
 
@@ -546,7 +576,8 @@ public abstract class Widget {
                 int row = 0;
                 for (int i = scroll; i < lines.size() && row < maxRows; i++) {
                     Line ln = lines.get(i);
-                    for (String seg : wrap(font, ln.text, innerW)) {
+                    String line = translate ? Lang.t(ln.text) : ln.text;
+                    for (String seg : wrap(font, line, innerW)) {
                         if (row >= maxRows) break;
                         g.drawString(font, seg, x + 6, y + 4 + row * lh, ln.color, false);
                         row++;
@@ -591,7 +622,7 @@ public abstract class Widget {
             int c = colorOverride != 0 ? colorOverride : (big ? Theme.INK : Theme.LABEL);
             // 关掉字体阴影：面板按非整数倍整体缩放，1px 的影子会被放大成看得见的“第二层字”，
             // 中文笔画本来就密，重影一叠特别刺眼（用户反馈图 2 的图例文字）。
-            g.drawString(f, text, x, y, c, false);
+            g.drawString(f, Lang.t(text), x, y, c, false);
         }
     }
 
@@ -614,8 +645,8 @@ public abstract class Widget {
             Font f = Minecraft.getInstance().font;
             Theme.card(g, x, y, w, h);
             if (icon != null) Icons.draw(g, icon, x + 8, y + 8, 16, 0xFFFFFFFF);
-            g.drawString(f, title, x + 30, y + 6, Theme.INK, false);
-            String v = valueText == null ? "" : valueText.get();
+            g.drawString(f, Lang.t(title), x + 30, y + 6, Theme.INK, false);
+            String v = Lang.t(valueText == null ? "" : valueText.get());
             g.drawString(f, v, x + w - 10 - f.width(v), y + 6, valueColor, false);
             int bx = x + 30, bw = w - 40;
             int by = y + h - 14;
@@ -728,7 +759,7 @@ public abstract class Widget {
                     cn.blockforge.generated.chunksmithchunksmithgu.PanelState.heat;
             Font f = Minecraft.getInstance().font;
             if (heat == null) {
-                String s = "尚无数据：点右侧 拉取热力图";
+                String s = Lang.t("尚无数据：点右侧 拉取热力图");
                 g.drawString(f, s, x + w / 2 - f.width(s) / 2, y + h / 2 - 4, Theme.BTN_TEXT_OFF, false);
                 return;
             }
@@ -763,7 +794,8 @@ public abstract class Widget {
             // 玩家位置十字
             g.fill(cx0 + size / 2 - 4, cy0 + size / 2, cx0 + size / 2 + 5, cy0 + size / 2 + 1, 0xFFFFFFFF);
             g.fill(cx0 + size / 2, cy0 + size / 2 - 4, cx0 + size / 2 + 1, cy0 + size / 2 + 5, 0xFFFFFFFF);
-            String info = heat.dim + "  ±" + half + " 区块  " + Theme.fmtCount(heat.chunks.size()) + " chunks";
+            String info = heat.dim + "  ±" + half + " " + Lang.t("区块") + "  "
+                    + Theme.fmtCount(heat.chunks.size()) + " chunks";
             g.drawString(f, info, x + 4, y + h - 12, Theme.TEXT_LIGHT, false);
         }
 

@@ -25,6 +25,10 @@ public final class Settings {
     public static int uiScalePercent = 100;
     // 面板四角的藤蔓花草装饰
     public static boolean decorations = true;
+    // 面板语言：zh = 中文，en = English（配置页可切，翻译见 Lang）
+    public static String language = Lang.ZH;
+    /** 语言是否由玩家自己选过；没选过就按游戏语言自动定（见 ClientSetup）。 */
+    public static boolean languageChosen = false;
 
     private static Path file() {
         return ChunkSmithGuiPaths.ensurePanelDir().resolve("panel-settings.properties");
@@ -47,6 +51,9 @@ public final class Settings {
         try { heatmapRadius = Integer.parseInt(P.getProperty("heatRadius", "128")); } catch (NumberFormatException ignored) { }
         try { uiScalePercent = Integer.parseInt(P.getProperty("uiScale", "100")); } catch (NumberFormatException ignored) { }
         decorations = Boolean.parseBoolean(P.getProperty("decorations", "true"));
+        String lang = P.getProperty("language");
+        languageChosen = Lang.ZH.equals(lang) || Lang.EN.equals(lang);
+        language = languageChosen ? lang : Lang.ZH;
         progressRefreshSec = Math.max(0, Math.min(60, progressRefreshSec));
         heatmapRadius = Math.max(16, Math.min(256, heatmapRadius));
         heatmapRadius = 16 * Math.round(heatmapRadius / 16.0f);
@@ -63,6 +70,7 @@ public final class Settings {
             P.setProperty("heatRadius", String.valueOf(heatmapRadius));
             P.setProperty("uiScale", String.valueOf(uiScalePercent));
             P.setProperty("decorations", String.valueOf(decorations));
+            P.setProperty("language", language);
             try (var writer = Files.newBufferedWriter(file(), StandardCharsets.UTF_8)) {
                 P.store(writer, "ChunkSmith Panel Settings");
             }

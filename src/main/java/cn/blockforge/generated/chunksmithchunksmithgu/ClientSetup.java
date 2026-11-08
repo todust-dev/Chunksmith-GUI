@@ -39,5 +39,25 @@ public final class ClientSetup {
         LogCapture.init();
         MinecraftForge.EVENT_BUS.register(new ClientKeys.TickEvents());
         PanelState.warmUpSets();   // 把 /cs set 备份历史从配置目录读回内存
+        event.enqueueWork(ClientSetup::defaultLanguageOnce);
+    }
+
+    /**
+     * 玩家还没在配置页选过语言时，按游戏语言定面板语言：
+     * 游戏是中文就用中文，其他语言一律用英文（面板只做了中英两套）。
+     * 选过之后就以玩家选的为准，不再被游戏语言覆盖。
+     */
+    private static void defaultLanguageOnce() {
+        if (Settings.languageChosen) return;
+        String code = "";
+        try {
+            code = net.minecraft.client.Minecraft.getInstance().options.languageCode;
+        } catch (Throwable ignored) {
+        }
+        Settings.language = code != null && code.toLowerCase(java.util.Locale.ROOT).startsWith("zh")
+                ? Lang.ZH : Lang.EN;
+        Settings.languageChosen = true;
+        Lang.invalidate();
+        Settings.save();
     }
 }
