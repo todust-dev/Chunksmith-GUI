@@ -119,8 +119,9 @@ public final class Theme {
     }
 
     /** 顶部居中的木牌标题：整块用纯色块画，不用贴图拉伸，任何缩放下都清晰不发糊。 */
-    public static void drawTitlePlate(GuiGraphics g, int centerX, int y, String title) {
+    public static void drawTitlePlate(GuiGraphics g, int centerX, int y, String rawTitle) {
         Font f = Minecraft.getInstance().font;
+        String title = rawTitle;
         int tw = Math.max(96, f.width(title) + 36);
         int x = centerX - tw / 2;
         int h = 22;

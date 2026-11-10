@@ -550,7 +550,8 @@ public abstract class Widget {
                 int row = 0;
                 for (int i = scroll; i < lines.size() && row < maxRows; i++) {
                     Line ln = lines.get(i);
-                    for (String seg : wrap(font, ln.text, innerW)) {
+                    String line = ln.text;
+                    for (String seg : wrap(font, line, innerW)) {
                         if (row >= maxRows) break;
                         g.drawString(font, seg, x + 6, y + 4 + row * lh, ln.color, false);
                         row++;

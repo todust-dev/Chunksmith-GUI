@@ -6,7 +6,8 @@ import net.minecraft.network.chat.Component;
  * 界面文案的统一入口（<b>已外置</b>）。
  *
  * <p>所有给人看的文字都搬到
- * <code>assets/chunksmith_modern_gui/lang/zh_cn.json</code> 里了，代码只留键名。
+ * <code>assets/chunksmith_modern_gui/lang/zh_cn.json</code> / <code>en_us.json</code> 里了，
+ * 代码只留键名（两份文件的键集合必须一致，改文案时两边一起改）。
  * 改文案直接改那个 JSON，不用重新编译 Java；也可以用自己的资源包覆盖。</p>
  *
  * <p><b>占位符只支持 {@code %s}</b>。Minecraft 的 {@code TranslatableContents} 用的是

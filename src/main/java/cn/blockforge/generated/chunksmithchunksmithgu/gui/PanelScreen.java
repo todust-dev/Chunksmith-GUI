@@ -336,7 +336,15 @@ public class PanelScreen extends Screen {
             s = Texts.t("status.safetyBypassed", s);
             color = Theme.DANGER;
         }
-        g.drawString(f, s, 24, 62, color, false);
+        g.drawString(f, fits(f, s, VW - 48), 24, 62, color, false);
+    }
+
+    /** 一行放不下就截断加省略号（英文文案比中文长，长句会顶到面板外面去）。 */
+    private static String fits(Font f, String s, int maxW) {
+        if (s == null || f.width(s) <= maxW) return s;
+        String cut = s;
+        while (cut.length() > 4 && f.width(cut + "…") > maxW) cut = cut.substring(0, cut.length() - 1);
+        return cut + "…";
     }
 
     /** 底栏右侧的实时信息 + 缩放说明。 */
@@ -365,11 +373,20 @@ public class PanelScreen extends Screen {
         int alpha = (int) (210 * Math.min(1.0, (toastUntil - now) / 600.0));
         alpha = Math.max(50, alpha);
         int bg = (alpha << 24) | 0x2E1C0E;
-        int w = f.width(toastMsg) + 18;
-        int x = (VW - w) / 2, y = VH - 58;
-        g.fill(x, y, x + w, y + 18, bg);
-        Theme.stroke(g, x, y, x + w, y + 18, Theme.GOLD);
-        g.drawString(f, toastMsg, x + 9, y + 5, 0xFFF7ECD2, false);
+        String msg = toastMsg;
+        // 英文比中文长一大截，一句话常常比面板还宽；超宽就折行，别画到面板外面去
+        List<String> rows = Widget.wrap(f, msg, VW - 90);
+        int lineH = 11;
+        int tw = 0;
+        for (String r : rows) tw = Math.max(tw, f.width(r));
+        int w = tw + 18;
+        int h = rows.size() * lineH + 8;
+        int x = (VW - w) / 2, y = VH - 58 - (h - 18);
+        g.fill(x, y, x + w, y + h, bg);
+        Theme.stroke(g, x, y, x + w, y + h, Theme.GOLD);
+        for (int i = 0; i < rows.size(); i++) {
+            g.drawString(f, rows.get(i), x + 9, y + 5 + i * lineH, 0xFFF7ECD2, false);
+        }
     }
 
     private void toast(String msg) {
@@ -543,7 +560,7 @@ public class PanelScreen extends Screen {
         chrome.add(iconHint(bx + 84, Texts.t("hint.next")));
     }
 
-    /** 图标键下方的一行中文说明（居中，画在底部木框上）。 */
+    /** 图标键下方的一行说明（居中，画在底部木框上）。宽度按翻译后的字算，切语言也不会偏。 */
     private Widget.Label iconHint(int btnX, String text) {
         Font f = Minecraft.getInstance().font;
         Widget.Label lb = new Widget.Label(btnX + (24 - f.width(text)) / 2, VH - 12, text, false);
@@ -1309,14 +1326,14 @@ public class PanelScreen extends Screen {
         Widget.Slider refresh = new Widget.Slider(x0, 176, 190, 16, 0, 60, Settings.progressRefreshSec, 1);
         refresh.onChange = v -> { Settings.progressRefreshSec = v; Settings.save(); };
         widgets.add(refresh);
-        refreshLb = new Widget.Label(x0 + 198, 180, "", false);
+        refreshLb = new Widget.Label(x0 + 198, 192, "", false);
         widgets.add(refreshLb);
 
         widgets.add(new Widget.Label(x0, 202, Texts.t("cfg.heatRadius"), false));
         Widget.Slider heatR = new Widget.Slider(x0, 214, 190, 16, 16, 256, Settings.heatmapRadius, 16);
         heatR.onChange = v -> { Settings.heatmapRadius = v; Settings.save(); };
         widgets.add(heatR);
-        heatRadiusLb = new Widget.Label(x0 + 198, 218, "", false);
+        heatRadiusLb = new Widget.Label(x0 + 198, 226, "", false);
         widgets.add(heatRadiusLb);
 
         Widget.Button save = new Widget.Button(x0, 244, 132, 20, Texts.t("btn.saveSettings"));
